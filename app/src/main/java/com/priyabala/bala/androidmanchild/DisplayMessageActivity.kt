@@ -6,7 +6,18 @@ import android.os.Bundle
 import android.widget.TextView
 import android.content.pm.PackageManager
 import android.hardware.Camera
+import android.view.View
 import android.widget.FrameLayout
+import android.hardware.Camera.PictureCallback
+import android.os.Environment
+import android.util.Log
+import java.io.FileNotFoundException
+import java.io.FileOutputStream
+import java.io.IOException
+import java.io.File
+import java.text.SimpleDateFormat
+import java.util.*
+
 
 class DisplayMessageActivity : AppCompatActivity() {
 
@@ -67,4 +78,47 @@ class DisplayMessageActivity : AppCompatActivity() {
         }
         return c // returns null if camera is unavailable
     }
+
+    var mPicture: PictureCallback = PictureCallback { data, camera ->
+        val pictureFile = getOutputMediaFile() ?: return@PictureCallback
+        try {
+            val fos = FileOutputStream(pictureFile)
+            fos.write(data)
+            fos.close()
+            println("Bala Picture Call back 1")
+        } catch (e: FileNotFoundException) {
+
+        } catch (e: IOException) {
+        }
+    }
+
+    private fun getOutputMediaFile(): File? {
+        val mediaStorageDir = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), "AndroidManChild")
+        println("Bala get external storage state = " + Environment.getExternalStorageState())
+        if (!mediaStorageDir.exists()) {
+            if (!mediaStorageDir.mkdirs()) {
+                Log.d("AndroidManChild", "failed to create directory")
+                return null
+            }
+        }
+        // Create a media file name
+        val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss")
+                .format(Date())
+        val mediaFile: File
+        mediaFile = File(mediaStorageDir.getPath() + File.separator
+                + "IMG_" + timeStamp + ".jpg")
+
+        println("Bala getOutputMediaFile media file")
+
+        return mediaFile
+    }
+
+    fun takePicture(view: View) {
+        if (camera != null) {
+            println("Bala takePicture 1")
+            camera!!.takePicture(null, null, this.mPicture)
+        }
+        println("Bala takePicture 2")
+    }
+
 }
