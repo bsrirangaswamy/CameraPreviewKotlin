@@ -5,6 +5,13 @@ import android.hardware.Camera
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import java.io.IOException
+import android.view.Surface.ROTATION_270
+import android.view.Surface.ROTATION_180
+import android.view.Surface.ROTATION_90
+import android.view.Surface.ROTATION_0
+import android.support.v4.view.ViewCompat.getRotation
+import android.app.Activity
+import android.view.Surface
 
 
 /** A basic Camera preview class  */
@@ -20,17 +27,14 @@ class CameraPreview(context: Context, private val mCamera: Camera) : SurfaceView
         mHolder.setType(SurfaceHolder.SURFACE_TYPE_PUSH_BUFFERS)
     }
 
-    override fun surfaceCreated(holder: SurfaceHolder) {
-        // The Surface has been created, now tell the camera where to draw the preview.
-        try {
-            mCamera.setPreviewDisplay(holder)
-            mCamera.setDisplayOrientation(90)
-            mCamera.startPreview()
-        } catch (e: IOException) {
-            println("Error setting camera preview: " + e)
-        }
-
-    }
+    override fun surfaceCreated(holder: SurfaceHolder) =// The Surface has been created, now tell the camera where to draw the preview.
+            try {
+                mCamera.setPreviewDisplay(holder)
+                this.setCameraDisplayOrientation()
+                mCamera.startPreview()
+            } catch (e: IOException) {
+                println("Error setting camera preview: " + e)
+            }
 
     override fun surfaceDestroyed(holder: SurfaceHolder) {
         // empty. Take care of releasing the Camera preview in your activity.
@@ -64,5 +68,44 @@ class CameraPreview(context: Context, private val mCamera: Camera) : SurfaceView
             println("Error starting camera preview: " + e.message)
         }
 
+    }
+
+    fun setCameraDisplayOrientation() {
+        val info = android.hardware.Camera.CameraInfo()
+        android.hardware.Camera.getCameraInfo(this.getCameraID(), info)
+        val activity = context as DisplayMessageActivity
+        val rotation = activity.windowManager.defaultDisplay
+                .rotation
+        var degrees = 0
+        when (rotation) {
+            Surface.ROTATION_0 -> degrees = 0
+            Surface.ROTATION_90 -> degrees = 90
+            Surface.ROTATION_180 -> degrees = 180
+            Surface.ROTATION_270 -> degrees = 270
+        }
+
+        var result: Int
+        if (info.facing == Camera.CameraInfo.CAMERA_FACING_FRONT) {
+            result = (info.orientation + degrees) % 360
+            result = (360 - result) % 360  // compensate the mirror
+        } else {  // back-facing
+            result = (info.orientation - degrees + 360) % 360
+        }
+        println("Bala setCameraDisplayOrientation = $result")
+        mCamera.setDisplayOrientation(result)
+    }
+
+    fun getCameraID() : Int {
+        var cameraId = 0
+        for (i in 0..Camera.getNumberOfCameras()) {
+            val info = Camera.CameraInfo()
+            Camera.getCameraInfo(i, info);
+            if (info.facing == Camera.CameraInfo.CAMERA_FACING_BACK) {
+                cameraId = i
+                println("Bala Camera found with camera ID = $cameraId");
+                break
+            }
+        }
+        return cameraId
     }
 }
