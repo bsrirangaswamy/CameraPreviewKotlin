@@ -2,26 +2,20 @@ package com.priyabala.bala.androidmanchild
 
 import android.content.Context
 import android.hardware.Camera
+import android.support.annotation.Size
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import java.io.IOException
-import android.view.Surface.ROTATION_270
-import android.view.Surface.ROTATION_180
-import android.view.Surface.ROTATION_90
-import android.view.Surface.ROTATION_0
-import android.support.v4.view.ViewCompat.getRotation
-import android.app.Activity
 import android.view.Surface
 
 
 /** A basic Camera preview class  */
 class CameraPreview(context: Context, private val mCamera: Camera) : SurfaceView(context), SurfaceHolder.Callback {
-    private var mHolder: SurfaceHolder
+    private var mHolder: SurfaceHolder = holder
 
     init {
         // Install a SurfaceHolder.Callback so we get notified when the
         // underlying surface is created and destroyed.
-        mHolder = holder
         mHolder.addCallback(this)
         // deprecated setting, but required on Android versions prior to 3.0
         mHolder.setType(SurfaceHolder.SURFACE_TYPE_PUSH_BUFFERS)
@@ -61,6 +55,21 @@ class CameraPreview(context: Context, private val mCamera: Camera) : SurfaceView
 
         // start preview with new settings
         try {
+            println("Bala surface changed width = $w and height = $h")
+
+//            var mParameters = mCamera.parameters
+
+            for (cameraSize in mCamera.parameters.supportedPreviewSizes) {
+                println("Bala surface changed get preview sizes width = " + cameraSize.width + "and height =" + cameraSize.height)
+//                if (cameraSize.width == 1280 && cameraSize.height == 720) {
+//                    mParameters.setPreviewSize(1280, 720)
+//                    mParameters.setPictureSize(1280, 720)
+//                    println("Bala surface changed size = $cameraSize")
+////                    break
+//                }
+            }
+//            mCamera.parameters = mParameters
+            println("Bala surface changed get preview sizes width = " + mCamera.parameters.previewSize.width + "and height =" + mCamera.parameters.previewSize.height)
             mCamera.setPreviewDisplay(mHolder)
             mCamera.startPreview()
 
