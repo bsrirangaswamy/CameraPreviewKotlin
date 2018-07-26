@@ -21,6 +21,7 @@ import android.media.CamcorderProfile
 import android.media.MediaRecorder
 import android.net.Uri
 import android.widget.Button
+import kotlin.concurrent.schedule
 
 class DisplayMessageActivity : AppCompatActivity() {
 
@@ -28,6 +29,7 @@ class DisplayMessageActivity : AppCompatActivity() {
     private var cameraPreview: CameraPreview? = null
     private var mediaRecorder : MediaRecorder? = null
     private var isRecording : Boolean = false
+    private var timer: Timer? = null
 
     val MEDIA_TYPE_IMAGE = 1
     val MEDIA_TYPE_VIDEO = 2
@@ -39,16 +41,12 @@ class DisplayMessageActivity : AppCompatActivity() {
         //Get content message from the intent that started this activity
         val message = intent.getStringExtra(EXTRA_MESSAGE_BALA)
 
-        //Capture layout's text view and set string as its text
-        val textView = findViewById<TextView>(R.id.textView).apply {
-            text = message
-        }
-
         println("Bala device has camera" + checkCameraHardware(this))
     }
 
     override fun onResume() {
         super.onResume()
+        setContentView(R.layout.activity_display_message)
         if (checkCameraHardware(this)) {
             camera = getCameraInstance()
             if (camera != null) {
@@ -56,7 +54,6 @@ class DisplayMessageActivity : AppCompatActivity() {
                 val preview = findViewById<FrameLayout>(R.id.camera_preview)
                 preview.addView(cameraPreview)
             }
-
             println("Bala device camera object = " + camera)
         }
     }
@@ -65,6 +62,11 @@ class DisplayMessageActivity : AppCompatActivity() {
         super.onPause()
         camera?.stopPreview()
         releaseCamera()
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        stopTimer()
     }
 
     /** Check if this device has a camera  */
@@ -175,7 +177,7 @@ class DisplayMessageActivity : AppCompatActivity() {
         mediaRecorder!!.setOutputFile(getOutputMediaFile(MEDIA_TYPE_VIDEO).toString())
 
         // Step 5: Set the preview output
-        mediaRecorder!!.setPreviewDisplay(cameraPreview!!.getHolder().getSurface())
+        mediaRecorder!!.setPreviewDisplay(cameraPreview!!.holder.surface)
 
         // Step 6: Prepare configured MediaRecorder
         try {
@@ -196,31 +198,10 @@ class DisplayMessageActivity : AppCompatActivity() {
     fun takeVideo(view: View) {
         if (camera != null) {
             println("Bala takeVideo 1")
-            val videoButton = findViewById<Button>(R.id.video_button)
             if (isRecording) {
-                // stop recording and release camera
-                mediaRecorder?.stop();  // stop the recording
-                releaseMediaRecorder(); // release the MediaRecorder object
-                camera?.lock();         // take camera access back from MediaRecorder
-
-                // inform the user that recording has stopped
-                videoButton.text = "Video"
-                isRecording = false;
+                stopRecording()
             } else {
-                // initialize video camera
-                if (prepareVideoRecorder()) {
-                    // Camera is available and unlocked, MediaRecorder is prepared,
-                    // now you can start recording
-                    mediaRecorder?.start();
-
-                    // inform the user that recording has started
-                    videoButton.text = "Stop"
-                    isRecording = true;
-                } else {
-                    // prepare didn't work, release the camera
-                    releaseMediaRecorder();
-                    // inform user
-                }
+                startRecording()
             }
         }
         println("Bala takeVideo 2")
@@ -238,4 +219,52 @@ class DisplayMessageActivity : AppCompatActivity() {
         camera = null
     }
 
+    fun startRecording() {
+        val videoButton = findViewById<Button>(R.id.video_button)
+
+        // initialize video camera
+        if (prepareVideoRecorder()) {
+            // Camera is available and unlocked, MediaRecorder is prepared,
+            // now you can start recording
+            mediaRecorder?.start()
+
+            // inform the user that recording has started
+            videoButton.text = "Stop"
+            isRecording = true
+            startTimer()
+        } else {
+            // prepare didn't work, release the camera
+            releaseMediaRecorder()
+            // inform user
+        }
+    }
+
+    fun stopRecording() {
+        val videoButton = findViewById<Button>(R.id.video_button)
+
+        // stop recording and release camera
+        mediaRecorder?.stop()  // stop the recording
+        releaseMediaRecorder() // release the MediaRecorder object
+        camera?.lock()         // take camera access back from MediaRecorder
+
+        // inform the user that recording has stopped
+        this@DisplayMessageActivity.runOnUiThread {
+            videoButton.text = "Video"
+        }
+
+        isRecording = false
+        stopTimer()
+    }
+
+    fun startTimer() {
+        timer = Timer()
+        timer!!.schedule(10000) {
+            stopRecording()
+            println("Bala timer executed")
+        }
+    }
+
+    fun stopTimer() {
+        timer?.cancel()
+    }
 }
