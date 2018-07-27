@@ -2,7 +2,6 @@ package com.priyabala.bala.androidmanchild
 
 import android.content.Context
 import android.hardware.Camera
-import android.support.annotation.Size
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import java.io.IOException

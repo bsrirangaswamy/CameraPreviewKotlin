@@ -3,7 +3,6 @@ package com.priyabala.bala.androidmanchild
 import android.content.Context
 import android.support.v7.app.AppCompatActivity
 import android.os.Bundle
-import android.widget.TextView
 import android.content.pm.PackageManager
 import android.hardware.Camera
 import android.view.View
@@ -46,7 +45,6 @@ class DisplayMessageActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        setContentView(R.layout.activity_display_message)
         if (checkCameraHardware(this)) {
             camera = getCameraInstance()
             if (camera != null) {
