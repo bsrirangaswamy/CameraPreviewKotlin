@@ -1,6 +1,7 @@
 package com.priyabala.bala.androidmanchild
 
 import android.content.Intent
+import android.os.Build
 import android.support.v7.app.AppCompatActivity
 import android.os.Bundle
 import android.view.View
@@ -15,12 +16,15 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
     }
 
-    fun sendMessage(view: View) {
-        val editText = findViewById<EditText>(R.id.editTextBala)
-        val message = editText.text.toString()
-        val intent = Intent(this, DisplayMessageActivity::class.java).apply {
-            putExtra(EXTRA_MESSAGE_BALA, message)
+    fun launchCamera(view: View) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            println("Bala build version 1 = " + Build.VERSION.SDK_INT)
+            val intent = Intent(this, DisplayCustomCameraView::class.java)
+            startActivity(intent)
+        } else {
+            println("Bala build version 2 = " + Build.VERSION.SDK_INT)
+            val intent = Intent(this, DisplayMessageActivity::class.java)
+            startActivity(intent)
         }
-        startActivity(intent)
     }
 }
