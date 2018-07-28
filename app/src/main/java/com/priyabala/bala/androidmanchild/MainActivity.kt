@@ -44,7 +44,7 @@ class MainActivity : AppCompatActivity() {
         return object: CountDownTimer(millisInFuture, countDownInterval) {
             override fun onTick(millisUntilFinished: Long){
                 val timeRemaining = timeString(millisUntilFinished)
-                countDownTextView.text = "T - $timeRemaining to launch"
+                countDownTextView.text = "2018.08.28 \n\n\n$timeRemaining"
             }
 
             override fun onFinish() {

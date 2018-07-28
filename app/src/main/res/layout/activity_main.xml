@@ -31,7 +31,7 @@
         android:textAlignment="center"
         android:textAllCaps="false"
         android:textColor="@android:color/holo_orange_dark"
-        android:textSize="30sp"
+        android:textSize="24sp"
         android:textStyle="bold"
         app:layout_constraintBottom_toTopOf="@+id/launchCameraButton"
         app:layout_constraintEnd_toEndOf="parent"
