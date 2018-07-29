@@ -4,4 +4,6 @@
     <string name="button_launch_camera">Camera</string>
     <string name="button_image_capture">Snapshot</string>
     <string name="button_video_capture">Video</string>
+    <string name="button_image_capture2">Snapshot</string>
+    <string name="button_video_capture2">Video</string>
 </resources>

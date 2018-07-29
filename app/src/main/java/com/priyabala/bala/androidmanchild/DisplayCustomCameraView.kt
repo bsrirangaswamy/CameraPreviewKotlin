@@ -17,10 +17,11 @@ import android.os.Message
 import android.view.Surface
 import android.view.SurfaceView
 import android.hardware.camera2.CameraCharacteristics
+import android.os.Build
+import android.support.annotation.RequiresApi
 
 class DisplayCustomCameraView : AppCompatActivity(), SurfaceHolder.Callback, Handler.Callback {
 
-    val TAG = "CamTest"
     val MY_PERMISSIONS_REQUEST_CAMERA = 1242
     private val MSG_CAMERA_OPENED = 1
     private val MSG_SURFACE_READY = 2
@@ -40,6 +41,7 @@ class DisplayCustomCameraView : AppCompatActivity(), SurfaceHolder.Callback, Han
         BACK("back")
     }
 
+    @RequiresApi(Build.VERSION_CODES.LOLLIPOP)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_display_custom_camera_view)
@@ -50,25 +52,25 @@ class DisplayCustomCameraView : AppCompatActivity(), SurfaceHolder.Callback, Han
 
         mCameraStateCB = object : CameraDevice.StateCallback() {
             override fun onOpened(camera: CameraDevice) {
-                Toast.makeText(applicationContext, "onOpened", Toast.LENGTH_SHORT).show()
+//                Toast.makeText(applicationContext, "onOpened", Toast.LENGTH_SHORT).show()
 
                 mCameraDevice = camera
                 mHandler.sendEmptyMessage(MSG_CAMERA_OPENED)
             }
 
             override fun onDisconnected(camera: CameraDevice) {
-                Toast.makeText(applicationContext, "onDisconnected", Toast.LENGTH_SHORT).show()
+//                Toast.makeText(applicationContext, "onDisconnected", Toast.LENGTH_SHORT).show()
             }
 
             override fun onError(camera: CameraDevice, error: Int) {
-                Toast.makeText(applicationContext, "onError", Toast.LENGTH_SHORT).show()
+//                Toast.makeText(applicationContext, "onError", Toast.LENGTH_SHORT).show()
             }
         }
     }
 
+    @RequiresApi(Build.VERSION_CODES.LOLLIPOP)
     override fun onStart() {
         super.onStart()
-
         //requesting permission
         val permissionCheck = ContextCompat.checkSelfPermission(this, android.Manifest.permission.CAMERA)
         if (permissionCheck != PackageManager.PERMISSION_GRANTED) {
@@ -85,7 +87,6 @@ class DisplayCustomCameraView : AppCompatActivity(), SurfaceHolder.Callback, Han
             } catch (e: CameraAccessException) {
                 e.printStackTrace()
             }
-
         }
     }
 
@@ -119,8 +120,7 @@ class DisplayCustomCameraView : AppCompatActivity(), SurfaceHolder.Callback, Han
             MSG_CAMERA_OPENED, MSG_SURFACE_READY ->
                 // if both surface is created and camera device is opened
                 // - ready to set up preview and other things
-                if (mSurfaceCreated && mCameraDevice != null
-                        && !mIsCameraConfigured) {
+                if (mSurfaceCreated && mCameraDevice != null && !mIsCameraConfigured) {
                     configureCamera()
                 }
         }
@@ -136,8 +136,7 @@ class DisplayCustomCameraView : AppCompatActivity(), SurfaceHolder.Callback, Han
 
         // configure camera with all the surfaces to be ever used
         try {
-            mCameraDevice!!.createCaptureSession(sfl,
-                    CaptureSessionListener(), null)
+            mCameraDevice?.createCaptureSession(sfl, CaptureSessionListener(), null)
         } catch (e: CameraAccessException) {
             e.printStackTrace()
         }
@@ -146,6 +145,7 @@ class DisplayCustomCameraView : AppCompatActivity(), SurfaceHolder.Callback, Han
     }
 
 
+    @RequiresApi(Build.VERSION_CODES.LOLLIPOP)
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
 
@@ -174,20 +174,23 @@ class DisplayCustomCameraView : AppCompatActivity(), SurfaceHolder.Callback, Han
         mSurfaceCreated = false
     }
 
+    @RequiresApi(Build.VERSION_CODES.LOLLIPOP)
     private inner class CaptureSessionListener : CameraCaptureSession.StateCallback() {
         override fun onConfigureFailed(session: CameraCaptureSession) {
             println("CaptureSessionConfigure failed")
         }
 
+        @RequiresApi(Build.VERSION_CODES.LOLLIPOP)
         override fun onConfigured(session: CameraCaptureSession) {
             println("CaptureSessionConfigure onConfigured")
             mCaptureSession = session
 
             try {
-                val previewRequestBuilder = mCameraDevice!!
-                        .createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW)
-                previewRequestBuilder.addTarget(mCameraSurface!!)
-                mCaptureSession!!.setRepeatingRequest(previewRequestBuilder.build(), null, null)
+                if (mCameraDevice != null && mCameraSurface != null && mCaptureSession != null) {
+                    val previewRequestBuilder = mCameraDevice!!.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW)
+                    previewRequestBuilder.addTarget(mCameraSurface!!)
+                    mCaptureSession!!.setRepeatingRequest(previewRequestBuilder.build(), null, null)
+                }
             } catch (e: CameraAccessException) {
                 println("setting up preview failed")
                 e.printStackTrace()
@@ -196,6 +199,7 @@ class DisplayCustomCameraView : AppCompatActivity(), SurfaceHolder.Callback, Han
         }
     }
 
+    @RequiresApi(Build.VERSION_CODES.LOLLIPOP)
     fun getCameraID(lensFacing: LensFacingSide) : String {
         var cameraId: String = "0"
         var requiredLensFacing: Int = 0
