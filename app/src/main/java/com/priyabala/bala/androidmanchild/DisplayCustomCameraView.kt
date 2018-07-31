@@ -1,9 +1,6 @@
 package com.priyabala.bala.androidmanchild
 
 import android.support.v7.app.AppCompatActivity
-import android.os.Bundle
-import android.os.Handler
-import android.view.SurfaceHolder
 import android.hardware.camera2.CameraAccessException
 import android.hardware.camera2.CameraDevice
 import android.hardware.camera2.CameraCaptureSession
@@ -13,194 +10,306 @@ import android.support.v4.app.ActivityCompat
 import android.widget.Toast
 import android.support.v4.content.ContextCompat
 import android.hardware.camera2.CameraManager
-import android.os.Message
-import android.view.Surface
-import android.view.SurfaceView
 import android.hardware.camera2.CameraCharacteristics
-import android.os.Build
 import android.support.annotation.RequiresApi
+import java.io.File.separator
+import android.hardware.camera2.CameraMetadata
+import android.hardware.camera2.CaptureRequest
+import android.graphics.SurfaceTexture
+import android.hardware.camera2.TotalCaptureResult
+import android.graphics.ImageFormat
+import android.media.Image
+import android.media.ImageReader
+import android.os.*
+import android.util.Log
+import android.util.Size
+import android.util.SparseIntArray
+import android.view.*
+import java.io.File
+import java.io.FileOutputStream
+import java.text.SimpleDateFormat
+import java.util.*
 
-class DisplayCustomCameraView : AppCompatActivity(), SurfaceHolder.Callback, Handler.Callback {
 
-    val MY_PERMISSIONS_REQUEST_CAMERA = 1242
-    private val MSG_CAMERA_OPENED = 1
-    private val MSG_SURFACE_READY = 2
-    private val mHandler = Handler(this)
-    private var mSurfaceView: SurfaceView? = null
-    private var mSurfaceHolder: SurfaceHolder? = null
+@RequiresApi(Build.VERSION_CODES.LOLLIPOP)
+class DisplayCustomCameraView : AppCompatActivity() {
+
+    private val myCameraPermissionRequestID: Int = 1242
+    private var previewsize: Size? = null
+    private var jpegSizes: Array<Size>? = null
+    private var textureView: TextureView? = null
+    private var cameraDevice: CameraDevice? = null
+    private var previewBuilder: CaptureRequest.Builder? = null
+    private var previewSession: CameraCaptureSession? = null
     private var mCameraManager: CameraManager? = null
-    private var mCameraStateCB: CameraDevice.StateCallback? = null
-    private var mCameraDevice: CameraDevice? = null
-    private var mCaptureSession: CameraCaptureSession? = null
-    private var mSurfaceCreated = true
-    private var mIsCameraConfigured = false
-    private var mCameraSurface: Surface? = null
+    private val ORIENTATIONS = SparseIntArray()
+    private val mediaTypeImage = 1
+    private val mediaTypeVideo = 2
 
     enum class LensFacingSide(s: String) {
         FRONT("front"),
         BACK("back")
     }
 
-    @RequiresApi(Build.VERSION_CODES.LOLLIPOP)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_display_custom_camera_view)
-        this.mSurfaceView = findViewById<SurfaceView>(R.id.surface_view_preview)
-        this.mSurfaceHolder = this.mSurfaceView!!.holder
-        this.mSurfaceHolder?.addCallback(this)
-        this.mCameraManager = this.getSystemService(Context.CAMERA_SERVICE) as CameraManager
+        ORIENTATIONS.append(Surface.ROTATION_0, 90)
+        ORIENTATIONS.append(Surface.ROTATION_90, 0)
+        ORIENTATIONS.append(Surface.ROTATION_180, 270)
+        ORIENTATIONS.append(Surface.ROTATION_270, 180)
+        textureView = findViewById(R.id.textureViewPreview)
+        textureView?.surfaceTextureListener = surfaceTextureListener
+    }
 
-        mCameraStateCB = object : CameraDevice.StateCallback() {
-            override fun onOpened(camera: CameraDevice) {
-//                Toast.makeText(applicationContext, "onOpened", Toast.LENGTH_SHORT).show()
 
-                mCameraDevice = camera
-                mHandler.sendEmptyMessage(MSG_CAMERA_OPENED)
+    fun takePicture2(view: View) {
+        getPicture()
+    }
+
+    fun getPicture() {
+        if (mCameraManager == null && cameraDevice == null) { return }
+        try {
+            val characteristics = mCameraManager!!.getCameraCharacteristics(cameraDevice!!.id)
+            if (characteristics != null) {
+                jpegSizes = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)!!.getOutputSizes(ImageFormat.JPEG)
             }
 
-            override fun onDisconnected(camera: CameraDevice) {
-//                Toast.makeText(applicationContext, "onDisconnected", Toast.LENGTH_SHORT).show()
+            var width = 640
+            var height = 480
+
+            if (jpegSizes != null && jpegSizes!!.size > 0) {
+                width = jpegSizes!![0].getWidth()
+                height = jpegSizes!![0].getHeight()
             }
 
-            override fun onError(camera: CameraDevice, error: Int) {
-//                Toast.makeText(applicationContext, "onError", Toast.LENGTH_SHORT).show()
+            val reader: ImageReader = ImageReader.newInstance(width, height, ImageFormat.JPEG, 1)
+            val outputSurfaces = ArrayList<Surface>(2)
+            outputSurfaces.add(reader.getSurface())
+            outputSurfaces.add(Surface(textureView!!.surfaceTexture))
+
+            val capturebuilder = cameraDevice!!.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE)
+            capturebuilder.addTarget(reader.getSurface())
+            capturebuilder.set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO)
+            val rotation = windowManager.defaultDisplay.rotation
+            capturebuilder.set(CaptureRequest.JPEG_ORIENTATION, ORIENTATIONS.get(rotation))
+
+            val handlerThread = HandlerThread("takepicture")
+            handlerThread.start()
+            val handler = Handler(handlerThread.looper)
+            reader.setOnImageAvailableListener(CameraImageAvailableListener(), handler)
+
+            cameraDevice!!.createCaptureSession(outputSurfaces, object : CameraCaptureSession.StateCallback() {
+                override fun onConfigured(session: CameraCaptureSession) {
+                    try {
+                        session.capture(capturebuilder.build(), PreviewSSession(), handler)
+                    } catch (e: Exception) {
+
+                    }
+
+                }
+
+                override fun onConfigureFailed(session: CameraCaptureSession) {
+
+                }
+            }, handler)
+        } catch (e: Exception) {
+        }
+
+    }
+
+    private inner class CameraImageAvailableListener : ImageReader.OnImageAvailableListener {
+        override fun onImageAvailable(reader: ImageReader) {
+            var image: Image? = null
+            try {
+                image = reader.acquireLatestImage()
+                val buffer = image!!.planes[0].buffer
+                val bytes = ByteArray(buffer.capacity())
+                buffer.get(bytes)
+                save(bytes)
+            } catch (e: Exception) {
+
+            } finally {
+                if (image != null) {
+                    image!!.close()
+                }
+            }
+        }
+
+        internal fun save(bytes: ByteArray) {
+            val file12 = getOutputMediaFile(mediaTypeImage)
+            var outputStream: FileOutputStream? = null
+            try {
+                outputStream = FileOutputStream(file12)
+                outputStream!!.write(bytes)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            } finally {
+                try {
+                    if (outputStream != null) {
+                        outputStream!!.close()
+                    }
+                } catch (e: Exception) {
+
+                }
+
             }
         }
     }
 
-    @RequiresApi(Build.VERSION_CODES.LOLLIPOP)
-    override fun onStart() {
-        super.onStart()
-        //requesting permission
+
+    private inner class PreviewSSession : CameraCaptureSession.CaptureCallback() {
+        override fun onCaptureStarted(session: CameraCaptureSession, request: CaptureRequest, timestamp: Long, frameNumber: Long) {
+            super.onCaptureStarted(session, request, timestamp, frameNumber)
+            println("Bala camera capture has started")
+        }
+
+        override fun onCaptureCompleted(session: CameraCaptureSession, request: CaptureRequest, result: TotalCaptureResult) {
+            super.onCaptureCompleted(session, request, result)
+            startCamera()
+        }
+    }
+
+    fun openCamera() {
+        mCameraManager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
+        val cameraId = getCameraID(LensFacingSide.BACK)
+        val characteristics = mCameraManager!!.getCameraCharacteristics(cameraId)
+        val map = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
+        previewsize = map!!.getOutputSizes(SurfaceTexture::class.java)[0]
+
         val permissionCheck = ContextCompat.checkSelfPermission(this, android.Manifest.permission.CAMERA)
         if (permissionCheck != PackageManager.PERMISSION_GRANTED) {
             if (ActivityCompat.shouldShowRequestPermissionRationale(this, android.Manifest.permission.CAMERA)) {
 
             } else {
-                ActivityCompat.requestPermissions(this, arrayOf(android.Manifest.permission.CAMERA), MY_PERMISSIONS_REQUEST_CAMERA)
+                ActivityCompat.requestPermissions(this, arrayOf(android.Manifest.permission.CAMERA), myCameraPermissionRequestID)
                 Toast.makeText(applicationContext, "request permission", Toast.LENGTH_SHORT).show()
             }
         } else {
             Toast.makeText(applicationContext, "PERMISSION_ALREADY_GRANTED", Toast.LENGTH_SHORT).show()
             try {
-                mCameraManager?.openCamera(getCameraID(LensFacingSide.BACK), mCameraStateCB, Handler())
+                mCameraManager!!.openCamera(cameraId, stateCallback, null)
             } catch (e: CameraAccessException) {
                 e.printStackTrace()
             }
         }
     }
 
-    override fun onStop() {
-        super.onStop()
+    private val surfaceTextureListener = object : TextureView.SurfaceTextureListener {
+        override fun onSurfaceTextureAvailable(surface: SurfaceTexture, width: Int, height: Int) {
+            openCamera()
+        }
+
+        override fun onSurfaceTextureSizeChanged(surface: SurfaceTexture, width: Int, height: Int) {
+
+        }
+        override fun onSurfaceTextureDestroyed(surface: SurfaceTexture): Boolean {
+            return false
+        }
+
+        override fun onSurfaceTextureUpdated(surface: SurfaceTexture) {}
+    }
+
+    private val stateCallback = object : CameraDevice.StateCallback() {
+        override fun onOpened(camera: CameraDevice) {
+            cameraDevice = camera
+            startCamera()
+        }
+
+        override fun onDisconnected(camera: CameraDevice) {
+
+        }
+        override fun onError(camera: CameraDevice, error: Int) {
+
+        }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        if (cameraDevice != null) {
+            cameraDevice!!.close()
+        }
+    }
+
+    fun startCamera() {
+        if (cameraDevice == null || !textureView!!.isAvailable || previewsize == null) {
+            return
+        }
+        val texture = textureView!!.surfaceTexture ?: return
+        texture.setDefaultBufferSize(previewsize!!.getWidth(), previewsize!!.getHeight())
+        val surface = Surface(texture)
+
         try {
-            if (mCaptureSession != null) {
-                mCaptureSession!!.stopRepeating()
-                mCaptureSession!!.close()
-                mCaptureSession = null
-            }
-
-            mIsCameraConfigured = false
-        } catch (e: CameraAccessException) {
-            // Doesn't matter, cloising device anyway
-            e.printStackTrace()
-        } catch (e2: IllegalStateException) {
-            // Doesn't matter, cloising device anyway
-            e2.printStackTrace()
-        } finally {
-            if (mCameraDevice != null) {
-                mCameraDevice!!.close()
-                mCameraDevice = null
-                mCaptureSession = null
-            }
-        }
-    }
-
-    override fun handleMessage(msg: Message): Boolean {
-        when (msg.what) {
-            MSG_CAMERA_OPENED, MSG_SURFACE_READY ->
-                // if both surface is created and camera device is opened
-                // - ready to set up preview and other things
-                if (mSurfaceCreated && mCameraDevice != null && !mIsCameraConfigured) {
-                    configureCamera()
-                }
+            previewBuilder = cameraDevice!!.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW)
+        } catch (e: Exception) {
         }
 
-        return true
-    }
-
-    private fun configureCamera() {
-        // prepare list of surfaces to be used in capture requests
-        val sfl = ArrayList<Surface>()
-
-        sfl.add(mCameraSurface!!) // surface for viewfinder preview
-
-        // configure camera with all the surfaces to be ever used
+        previewBuilder!!.addTarget(surface)
         try {
-            mCameraDevice?.createCaptureSession(sfl, CaptureSessionListener(), null)
-        } catch (e: CameraAccessException) {
-            e.printStackTrace()
-        }
-
-        mIsCameraConfigured = true
-    }
-
-
-    @RequiresApi(Build.VERSION_CODES.LOLLIPOP)
-    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-
-        when (requestCode) {
-            MY_PERMISSIONS_REQUEST_CAMERA -> if (ActivityCompat.checkSelfPermission(this, android.Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED)
-                try {
-                    mCameraManager?.openCamera(getCameraID(LensFacingSide.BACK), mCameraStateCB, Handler())
-                } catch (e: CameraAccessException) {
-                    e.printStackTrace()
+            cameraDevice!!.createCaptureSession(Arrays.asList(surface), object : CameraCaptureSession.StateCallback() {
+                override fun onConfigured(session: CameraCaptureSession) {
+                    previewSession = session
+                    getChangedPreview()
                 }
 
-        }
-    }
-
-    override fun surfaceCreated(holder: SurfaceHolder) {
-        mCameraSurface = holder.surface
-    }
-
-    override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
-        mCameraSurface = holder.surface
-        mSurfaceCreated = true
-        mHandler.sendEmptyMessage(MSG_SURFACE_READY)
-    }
-
-    override fun surfaceDestroyed(holder: SurfaceHolder) {
-        mSurfaceCreated = false
-    }
-
-    @RequiresApi(Build.VERSION_CODES.LOLLIPOP)
-    private inner class CaptureSessionListener : CameraCaptureSession.StateCallback() {
-        override fun onConfigureFailed(session: CameraCaptureSession) {
-            println("CaptureSessionConfigure failed")
+                override fun onConfigureFailed(session: CameraCaptureSession) {}
+            }, null)
+        } catch (e: Exception) {
         }
 
-        @RequiresApi(Build.VERSION_CODES.LOLLIPOP)
-        override fun onConfigured(session: CameraCaptureSession) {
-            println("CaptureSessionConfigure onConfigured")
-            mCaptureSession = session
+    }
 
-            try {
-                if (mCameraDevice != null && mCameraSurface != null && mCaptureSession != null) {
-                    val previewRequestBuilder = mCameraDevice!!.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW)
-                    previewRequestBuilder.addTarget(mCameraSurface!!)
-                    mCaptureSession!!.setRepeatingRequest(previewRequestBuilder.build(), null, null)
-                }
-            } catch (e: CameraAccessException) {
-                println("setting up preview failed")
-                e.printStackTrace()
+    fun getChangedPreview() {
+        if (cameraDevice == null && previewBuilder == null && previewSession == null) { return }
+        previewBuilder!!.set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO)
+        val thread = HandlerThread("changed Preview")
+        thread.start()
+        val handler = Handler(thread.looper)
+        try {
+            previewSession!!.setRepeatingRequest(previewBuilder!!.build(), null, handler)
+        } catch (e: Exception) {
+
+        }
+
+    }
+
+    private fun getOutputMediaFile(type: Int): File? {
+        // To be safe, you should check that the SDCard is mounted
+        // using Environment.getExternalStorageState() before doing this.
+        println("Bala get external storage state = " + Environment.getExternalStorageState())
+
+        val mediaStorageDir = File(Environment.getExternalStoragePublicDirectory(
+                Environment.DIRECTORY_PICTURES), "AndroidManChild")
+        // This location works best if you want the created images to be shared
+        // between applications and persist after your app has been uninstalled.
+
+        // Create the storage directory if it does not exist
+        if (!mediaStorageDir.exists()) {
+            if (!mediaStorageDir.mkdirs()) {
+                Log.d("AndroidManChild", "failed to create directory")
+                return null
             }
-
         }
+
+        // Create a media file name
+        val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss").format(Date())
+        val mediaFile: File
+        if (type == mediaTypeImage) {
+            mediaFile = File(mediaStorageDir.path + File.separator +
+                    "IMG_" + timeStamp + ".jpg")
+        } else if (type == mediaTypeVideo) {
+            mediaFile = File(mediaStorageDir.path + File.separator +
+                    "VID_" + timeStamp + ".mp4")
+        } else {
+            return null
+        }
+
+        println("Bala getOutputMediaFile media file")
+
+        return mediaFile
     }
 
-    @RequiresApi(Build.VERSION_CODES.LOLLIPOP)
-    fun getCameraID(lensFacing: LensFacingSide) : String {
+    private fun getCameraID(lensFacing: LensFacingSide) : String {
         var cameraId: String = "0"
         var requiredLensFacing: Int = 0
         if (lensFacing == LensFacingSide.FRONT) {
@@ -209,7 +318,7 @@ class DisplayCustomCameraView : AppCompatActivity(), SurfaceHolder.Callback, Han
             requiredLensFacing = CameraCharacteristics.LENS_FACING_BACK
         }
 
-        if (this.mCameraManager != null) {
+        if (mCameraManager != null) {
             try {
                 for (id in this.mCameraManager!!.cameraIdList) {
                     val cameraChars: CameraCharacteristics = this.mCameraManager!!.getCameraCharacteristics(id)
