@@ -5,4 +5,8 @@
     <string name="button_image_capture">Snapshot</string>
     <string name="button_video_capture">Video</string>
     <string name="button_submit">Submit</string>
+    <string name="request_permission">Skyfie needs camera permission.</string>
+    <string name="camera_error">This device doesn\'t support Camera.</string>
+    <string name="title_activity_display_custom_camera2">DisplayCustomCamera2Activity</string>
+    <string name="action_settings">Settings</string>
 </resources>

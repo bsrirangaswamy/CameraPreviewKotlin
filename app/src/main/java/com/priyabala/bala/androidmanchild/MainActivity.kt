@@ -30,7 +30,7 @@ class MainActivity : AppCompatActivity() {
     fun launchCamera(view: View) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             println("Bala build version 1 = " + Build.VERSION.SDK_INT)
-            val intent = Intent(this, DisplayCustomCameraView::class.java)
+            val intent = Intent(this, DisplayCustomCamera2Activity::class.java)
             startActivity(intent)
         } else {
             println("Bala build version 2 = " + Build.VERSION.SDK_INT)
