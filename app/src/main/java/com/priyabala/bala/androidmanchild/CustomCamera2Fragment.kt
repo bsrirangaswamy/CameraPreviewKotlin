@@ -39,10 +39,7 @@ import android.hardware.camera2.CaptureResult
 import android.hardware.camera2.TotalCaptureResult
 import android.media.Image
 import android.media.ImageReader
-import android.os.Build
-import android.os.Bundle
-import android.os.Handler
-import android.os.HandlerThread
+import android.os.*
 import android.support.annotation.RequiresApi
 import android.support.v4.app.ActivityCompat
 import android.support.v4.app.DialogFragment
@@ -56,17 +53,13 @@ import android.view.Surface
 import android.view.TextureView
 import android.view.View
 import android.view.ViewGroup
-import android.widget.Button
 import android.widget.Toast
 import kotlinx.android.synthetic.main.fragment_custom_camera2.*
-
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
-import java.util.ArrayList
-import java.util.Arrays
-import java.util.Collections
-import java.util.Comparator
+import java.text.SimpleDateFormat
+import java.util.*
 import java.util.concurrent.Semaphore
 import java.util.concurrent.TimeUnit
 
@@ -82,13 +75,16 @@ class CustomCamera2Fragment : Fragment(), ActivityCompat.OnRequestPermissionsRes
     private var mBackgroundThread: HandlerThread? = null
     private var mBackgroundHandler: Handler? = null
     private var mImageReader: ImageReader? = null
-    private var mFile: File? = null
     private var mPreviewRequestBuilder: CaptureRequest.Builder? = null
     private var mPreviewRequest: CaptureRequest? = null
     private var mState = STATE_PREVIEW
     private val mCameraOpenCloseLock = Semaphore(1)
     private var mFlashSupported: Boolean = false
     private var mSensorOrientation: Int = 0
+    private var capturedImage: Image? = null
+
+    private val mediaTypeImage = 1
+    private val mediaTypeVideo = 2
 
     private val mSurfaceTextureListener = object : TextureView.SurfaceTextureListener {
 
@@ -134,7 +130,12 @@ class CustomCamera2Fragment : Fragment(), ActivityCompat.OnRequestPermissionsRes
     }
 
     private val mOnImageAvailableListener = ImageReader.OnImageAvailableListener { reader ->
-        mBackgroundHandler!!.post(ImageSaver(reader.acquireNextImage(), mFile!!))
+        closeCapturedImage()
+        try {
+            capturedImage = reader.acquireLatestImage()
+        } catch (e: Exception) {
+            Log.v(TAG, "Bala CameraImageAvailableListener exception = $e")
+        }
     }
 
 
@@ -205,12 +206,13 @@ class CustomCamera2Fragment : Fragment(), ActivityCompat.OnRequestPermissionsRes
 
     override fun onViewCreated(view: View?, savedInstanceState: Bundle?) {
         snapshot_button2.setOnClickListener(this)
+        ok_button.setOnClickListener(this)
+        cancel_button.setOnClickListener(this)
         mTextureView = view?.findViewById(R.id.customTextureView) as CustomFitTextureView
     }
 
     override fun onActivityCreated(savedInstanceState: Bundle?) {
         super.onActivityCreated(savedInstanceState)
-        mFile = File(activity.getExternalFilesDir(null), "pic.jpg")
     }
 
     override fun onResume() {
@@ -221,14 +223,15 @@ class CustomCamera2Fragment : Fragment(), ActivityCompat.OnRequestPermissionsRes
         // available, and "onSurfaceTextureAvailable" will not be called. In that case, we can open
         // a camera and start preview from here (otherwise, we wait until the surface is ready in
         // the SurfaceTextureListener).
-        if (mTextureView!!.isAvailable()) {
-            openCamera(mTextureView!!.getWidth(), mTextureView!!.getHeight())
+        if (mTextureView!!.isAvailable) {
+            openCamera(mTextureView!!.width, mTextureView!!.height)
         } else {
-            mTextureView!!.setSurfaceTextureListener(mSurfaceTextureListener)
+            mTextureView!!.surfaceTextureListener = mSurfaceTextureListener
         }
     }
 
     override fun onPause() {
+        closeCapturedImage()
         closeCamera()
         stopBackgroundThread()
         super.onPause()
@@ -280,7 +283,7 @@ class CustomCamera2Fragment : Fragment(), ActivityCompat.OnRequestPermissionsRes
                         Arrays.asList(*map.getOutputSizes(ImageFormat.JPEG)),
                         CompareSizesByArea())
                 mImageReader = ImageReader.newInstance(largest.width, largest.height,
-                        ImageFormat.JPEG, /*maxImages*/2)
+                        ImageFormat.JPEG,1)
                 mImageReader!!.setOnImageAvailableListener(
                         mOnImageAvailableListener, mBackgroundHandler)
 
@@ -588,12 +591,15 @@ class CustomCamera2Fragment : Fragment(), ActivityCompat.OnRequestPermissionsRes
 
             val CaptureCallback = object : CameraCaptureSession.CaptureCallback() {
 
+                override fun onCaptureStarted(session: CameraCaptureSession?, request: CaptureRequest?, timestamp: Long, frameNumber: Long) {
+                    super.onCaptureStarted(session, request, timestamp, frameNumber)
+                    Log.v(TAG, "Bala camera capture has started")
+                }
                 override fun onCaptureCompleted(session: CameraCaptureSession,
                                                 request: CaptureRequest,
                                                 result: TotalCaptureResult) {
-                    showToast("Saved: " + mFile!!)
-                    Log.d(TAG, mFile!!.toString())
-                    unlockFocus()
+                    super.onCaptureCompleted(session, request, result)
+                    Log.v(TAG, "Bala camera capture has completed")
                 }
             }
 
@@ -647,6 +653,12 @@ class CustomCamera2Fragment : Fragment(), ActivityCompat.OnRequestPermissionsRes
             R.id.snapshot_button2 -> {
                 takeSnapshot()
             }
+            R.id.ok_button -> {
+                submitPicture()
+            }
+            R.id.cancel_button -> {
+                cancelPicture()
+            }
         }
     }
 
@@ -657,43 +669,86 @@ class CustomCamera2Fragment : Fragment(), ActivityCompat.OnRequestPermissionsRes
         }
     }
 
-    /**
-     * Saves a JPEG [Image] into the specified [File].
-     */
-    private class ImageSaver internal constructor(
-            /**
-             * The JPEG image
-             */
-            private val mImage: Image,
-            /**
-             * The file we save the image into.
-             */
-            private val mFile: File) : Runnable {
+    private fun submitPicture() {
+        val image = capturedImage ?: return
+        val mFile = getOutputMediaFile(mediaTypeImage) ?: return
+        val buffer = image.planes[0].buffer ?: return
+        val bytes = ByteArray(buffer.capacity())
+        buffer.get(bytes)
+        showToast("Bala camera capture has completed " + mFile)
+        save(bytes)
+    }
 
-        override fun run() {
-            val buffer = mImage.planes[0].buffer
-            val bytes = ByteArray(buffer.remaining())
-            buffer.get(bytes)
-            var output: FileOutputStream? = null
+    private fun cancelPicture() {
+        closeCapturedImage()
+        unlockFocus()
+    }
+
+    private fun save(bytes: ByteArray) {
+        val file12 = getOutputMediaFile(mediaTypeImage)
+        var outputStream: FileOutputStream? = null
+        try {
+            outputStream = FileOutputStream(file12)
+            outputStream!!.write(bytes)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        } finally {
             try {
-                output = FileOutputStream(mFile)
-                output.write(bytes)
-            } catch (e: IOException) {
-                e.printStackTrace()
-            } finally {
-                mImage.close()
-                if (null != output) {
-                    try {
-                        output.close()
-                    } catch (e: IOException) {
-                        e.printStackTrace()
-                    }
-
+                if (outputStream != null) {
+                    outputStream!!.close()
                 }
+            } catch (e: Exception) {
+                Log.v(TAG, "Bala save exception = $e")
+            }
+            closeCapturedImage()
+            unlockFocus()
+        }
+    }
+
+    private fun getOutputMediaFile(type: Int): File? {
+        // To be safe, you should check that the SDCard is mounted
+        // using Environment.getExternalStorageState() before doing this.
+        println("Bala get external storage state = " + Environment.getExternalStorageState())
+
+        val mediaStorageDir = File(Environment.getExternalStoragePublicDirectory(
+                Environment.DIRECTORY_PICTURES), "AndroidManChild")
+        // This location works best if you want the created images to be shared
+        // between applications and persist after your app has been uninstalled.
+
+        // Create the storage directory if it does not exist
+        if (!mediaStorageDir.exists()) {
+            if (!mediaStorageDir.mkdirs()) {
+                Log.d("AndroidManChild", "failed to create directory")
+                return null
             }
         }
 
+        // Create a media file name
+        val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss").format(Date())
+        val mediaFile: File
+        if (type == mediaTypeImage) {
+            mediaFile = File(mediaStorageDir.path + File.separator +
+                    "IMG_" + timeStamp + ".jpg")
+        } else if (type == mediaTypeVideo) {
+            mediaFile = File(mediaStorageDir.path + File.separator +
+                    "VID_" + timeStamp + ".mp4")
+        } else {
+            return null
+        }
+
+        println("Bala getOutputMediaFile media file")
+
+        return mediaFile
     }
+
+    private fun closeCapturedImage() {
+        if (capturedImage != null) {
+            capturedImage!!.close()
+        }
+    }
+    /**
+     * Saves a JPEG [Image] into the specified [File].
+     */
 
     /**
      * Compares two `Size`s based on their areas.
