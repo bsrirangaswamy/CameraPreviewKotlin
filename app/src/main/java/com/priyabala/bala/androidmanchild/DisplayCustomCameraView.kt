@@ -12,7 +12,6 @@ import android.support.v4.content.ContextCompat
 import android.hardware.camera2.CameraManager
 import android.hardware.camera2.CameraCharacteristics
 import android.support.annotation.RequiresApi
-import java.io.File.separator
 import android.hardware.camera2.CameraMetadata
 import android.hardware.camera2.CaptureRequest
 import android.graphics.SurfaceTexture
@@ -34,6 +33,7 @@ import java.util.*
 @RequiresApi(Build.VERSION_CODES.LOLLIPOP)
 class DisplayCustomCameraView : AppCompatActivity() {
 
+    private val TAG = DisplayCustomCameraView::class.java.simpleName
     private val myCameraPermissionRequestID: Int = 1242
     private var previewsize: Size? = null
     private var jpegSizes: Array<Size>? = null
@@ -43,6 +43,7 @@ class DisplayCustomCameraView : AppCompatActivity() {
     private var previewSession: CameraCaptureSession? = null
     private var mCameraManager: CameraManager? = null
     private val ORIENTATIONS = SparseIntArray()
+    private var capturedImage: Image? = null
     private val mediaTypeImage = 1
     private val mediaTypeVideo = 2
 
@@ -62,12 +63,43 @@ class DisplayCustomCameraView : AppCompatActivity() {
         textureView?.surfaceTextureListener = surfaceTextureListener
     }
 
-
-    fun takePicture2(view: View) {
-        getPicture()
+    override fun onPause() {
+        super.onPause()
+        closeCapturedImage()
+        closeCamera()
     }
 
-    fun getPicture() {
+    private val surfaceTextureListener = object : TextureView.SurfaceTextureListener {
+        override fun onSurfaceTextureAvailable(surface: SurfaceTexture, width: Int, height: Int) {
+            openCamera()
+        }
+
+        override fun onSurfaceTextureSizeChanged(surface: SurfaceTexture, width: Int, height: Int) {
+            println("Bala surface changed")
+        }
+
+        override fun onSurfaceTextureDestroyed(surface: SurfaceTexture): Boolean {
+            return false
+        }
+
+        override fun onSurfaceTextureUpdated(surface: SurfaceTexture) {}
+    }
+
+    private val stateCallback = object : CameraDevice.StateCallback() {
+        override fun onOpened(camera: CameraDevice) {
+            cameraDevice = camera
+            startCamera()
+        }
+
+        override fun onDisconnected(camera: CameraDevice) {
+
+        }
+        override fun onError(camera: CameraDevice, error: Int) {
+
+        }
+    }
+
+    fun takePicture2(view: View) {
         if (mCameraManager == null && cameraDevice == null) { return }
         try {
             val characteristics = mCameraManager!!.getCameraCharacteristics(cameraDevice!!.id)
@@ -92,6 +124,8 @@ class DisplayCustomCameraView : AppCompatActivity() {
             capturebuilder.addTarget(reader.getSurface())
             capturebuilder.set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO)
             val rotation = windowManager.defaultDisplay.rotation
+            println("Bala rotation = $rotation")
+            println("Bala get rotation = $ORIENTATIONS.get(rotation)")
             capturebuilder.set(CaptureRequest.JPEG_ORIENTATION, ORIENTATIONS.get(rotation))
 
             val handlerThread = HandlerThread("takepicture")
@@ -104,70 +138,56 @@ class DisplayCustomCameraView : AppCompatActivity() {
                     try {
                         session.capture(capturebuilder.build(), PreviewSSession(), handler)
                     } catch (e: Exception) {
-
+                        Log.v(TAG, "getPicture() : createCaptureSession-onConfigured exception = $e")
                     }
-
                 }
 
                 override fun onConfigureFailed(session: CameraCaptureSession) {
-
+                    Log.v(TAG, "getPicture() : createCaptureSession-onConfigureFailed")
                 }
             }, handler)
         } catch (e: Exception) {
+            Log.v(TAG, "getPicture() : exception = $e")
         }
 
     }
-
-    private inner class CameraImageAvailableListener : ImageReader.OnImageAvailableListener {
-        override fun onImageAvailable(reader: ImageReader) {
-            var image: Image? = null
-            try {
-                image = reader.acquireLatestImage()
-                val buffer = image!!.planes[0].buffer
-                val bytes = ByteArray(buffer.capacity())
-                buffer.get(bytes)
-                save(bytes)
-            } catch (e: Exception) {
-
-            } finally {
-                if (image != null) {
-                    image!!.close()
-                }
-            }
-        }
-
-        internal fun save(bytes: ByteArray) {
-            val file12 = getOutputMediaFile(mediaTypeImage)
-            var outputStream: FileOutputStream? = null
-            try {
-                outputStream = FileOutputStream(file12)
-                outputStream!!.write(bytes)
-            } catch (e: Exception) {
-                e.printStackTrace()
-            } finally {
-                try {
-                    if (outputStream != null) {
-                        outputStream!!.close()
-                    }
-                } catch (e: Exception) {
-
-                }
-
-            }
-        }
-    }
-
 
     private inner class PreviewSSession : CameraCaptureSession.CaptureCallback() {
         override fun onCaptureStarted(session: CameraCaptureSession, request: CaptureRequest, timestamp: Long, frameNumber: Long) {
             super.onCaptureStarted(session, request, timestamp, frameNumber)
-            println("Bala camera capture has started")
+            Log.v(TAG, "Bala camera capture has started")
         }
 
         override fun onCaptureCompleted(session: CameraCaptureSession, request: CaptureRequest, result: TotalCaptureResult) {
             super.onCaptureCompleted(session, request, result)
-            startCamera()
+            Log.v(TAG, "Bala camera capture has completed")
         }
+    }
+
+    private inner class CameraImageAvailableListener : ImageReader.OnImageAvailableListener {
+        override fun onImageAvailable(reader: ImageReader) {
+            closeCapturedImage()
+            try {
+                capturedImage = reader.acquireLatestImage()
+            } catch (e: Exception) {
+                Log.v(TAG, "Bala CameraImageAvailableListener exception = $e")
+            }
+        }
+    }
+
+    fun submitPicture(view: View) {
+        val image = capturedImage ?: return
+        val buffer = image.planes[0].buffer
+        val bytes = ByteArray(buffer.capacity())
+        buffer.get(bytes)
+        save(bytes)
+        closeCapturedImage()
+        startCamera()
+    }
+
+    fun cancelPicture(view: View) {
+        closeCapturedImage()
+        startCamera()
     }
 
     fun openCamera() {
@@ -195,42 +215,6 @@ class DisplayCustomCameraView : AppCompatActivity() {
         }
     }
 
-    private val surfaceTextureListener = object : TextureView.SurfaceTextureListener {
-        override fun onSurfaceTextureAvailable(surface: SurfaceTexture, width: Int, height: Int) {
-            openCamera()
-        }
-
-        override fun onSurfaceTextureSizeChanged(surface: SurfaceTexture, width: Int, height: Int) {
-
-        }
-        override fun onSurfaceTextureDestroyed(surface: SurfaceTexture): Boolean {
-            return false
-        }
-
-        override fun onSurfaceTextureUpdated(surface: SurfaceTexture) {}
-    }
-
-    private val stateCallback = object : CameraDevice.StateCallback() {
-        override fun onOpened(camera: CameraDevice) {
-            cameraDevice = camera
-            startCamera()
-        }
-
-        override fun onDisconnected(camera: CameraDevice) {
-
-        }
-        override fun onError(camera: CameraDevice, error: Int) {
-
-        }
-    }
-
-    override fun onPause() {
-        super.onPause()
-        if (cameraDevice != null) {
-            cameraDevice!!.close()
-        }
-    }
-
     fun startCamera() {
         if (cameraDevice == null || !textureView!!.isAvailable || previewsize == null) {
             return
@@ -238,7 +222,6 @@ class DisplayCustomCameraView : AppCompatActivity() {
         val texture = textureView!!.surfaceTexture ?: return
         texture.setDefaultBufferSize(previewsize!!.getWidth(), previewsize!!.getHeight())
         val surface = Surface(texture)
-
         try {
             previewBuilder = cameraDevice!!.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW)
         } catch (e: Exception) {
@@ -255,6 +238,7 @@ class DisplayCustomCameraView : AppCompatActivity() {
                 override fun onConfigureFailed(session: CameraCaptureSession) {}
             }, null)
         } catch (e: Exception) {
+            Log.v(TAG, "Bala startCamera exception = $e")
         }
 
     }
@@ -265,12 +249,32 @@ class DisplayCustomCameraView : AppCompatActivity() {
         val thread = HandlerThread("changed Preview")
         thread.start()
         val handler = Handler(thread.looper)
+        println("Bala changed preview")
         try {
             previewSession!!.setRepeatingRequest(previewBuilder!!.build(), null, handler)
         } catch (e: Exception) {
-
+            Log.v(TAG, "Bala getChangedPreview exception = $e")
         }
 
+    }
+
+    private fun save(bytes: ByteArray) {
+        val file12 = getOutputMediaFile(mediaTypeImage)
+        var outputStream: FileOutputStream? = null
+        try {
+            outputStream = FileOutputStream(file12)
+            outputStream!!.write(bytes)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        } finally {
+            try {
+                if (outputStream != null) {
+                    outputStream!!.close()
+                }
+            } catch (e: Exception) {
+                Log.v(TAG, "Bala save exception = $e")
+            }
+        }
     }
 
     private fun getOutputMediaFile(type: Int): File? {
@@ -335,5 +339,17 @@ class DisplayCustomCameraView : AppCompatActivity() {
         }
         println ("Bala camera ID returned = $cameraId")
         return cameraId
+    }
+
+    private fun closeCamera() {
+        if (cameraDevice != null) {
+            cameraDevice!!.close()
+        }
+    }
+
+    private fun closeCapturedImage() {
+        if (capturedImage != null) {
+            capturedImage!!.close()
+        }
     }
 }
