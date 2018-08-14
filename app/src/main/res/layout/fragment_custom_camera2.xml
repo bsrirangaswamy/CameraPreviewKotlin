@@ -45,6 +45,7 @@
         android:layout_width="100dp"
         android:layout_height="wrap_content"
         android:text="@android:string/cancel"
+        android:visibility="invisible"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent" />
 
@@ -54,6 +55,7 @@
         android:layout_height="wrap_content"
         android:layout_marginEnd="1dp"
         android:text="@string/button_submit"
+        android:visibility="invisible"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintTop_toTopOf="parent" />
 

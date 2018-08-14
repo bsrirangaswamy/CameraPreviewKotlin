@@ -57,7 +57,6 @@ import android.widget.Toast
 import kotlinx.android.synthetic.main.fragment_custom_camera2.*
 import java.io.File
 import java.io.FileOutputStream
-import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.*
 import java.util.concurrent.Semaphore
@@ -131,9 +130,11 @@ class CustomCamera2Fragment : Fragment(), ActivityCompat.OnRequestPermissionsRes
 
     private val mOnImageAvailableListener = ImageReader.OnImageAvailableListener { reader ->
         closeCapturedImage()
+        buttonsVisibility(true)
         try {
             capturedImage = reader.acquireLatestImage()
         } catch (e: Exception) {
+            closeCapturedImage()
             Log.v(TAG, "Bala CameraImageAvailableListener exception = $e")
         }
     }
@@ -745,6 +746,23 @@ class CustomCamera2Fragment : Fragment(), ActivityCompat.OnRequestPermissionsRes
         if (capturedImage != null) {
             capturedImage!!.close()
         }
+        buttonsVisibility(false)
+    }
+
+    private fun buttonsVisibility(isCaptured: Boolean) {
+        this@CustomCamera2Fragment.activity.runOnUiThread {
+            if (isCaptured) {
+                ok_button.visibility = View.VISIBLE
+                cancel_button.visibility = View.VISIBLE
+                snapshot_button2.visibility = View.INVISIBLE
+                video_button2.visibility = View.INVISIBLE
+            } else {
+                ok_button.visibility = View.INVISIBLE
+                cancel_button.visibility = View.INVISIBLE
+                snapshot_button2.visibility = View.VISIBLE
+                video_button2.visibility = View.VISIBLE
+            }
+        }
     }
     /**
      * Saves a JPEG [Image] into the specified [File].
@@ -818,15 +836,15 @@ class CustomCamera2Fragment : Fragment(), ActivityCompat.OnRequestPermissionsRes
          */
         private val TAG = CustomCamera2Fragment::class.java.simpleName
         private val ORIENTATIONS = SparseIntArray()
-        private val REQUEST_CAMERA_PERMISSION = 1
-        private val FRAGMENT_DIALOG = "Skyfie"
-        private val STATE_PREVIEW = 0
-        private val STATE_WAITING_LOCK = 1
-        private val STATE_WAITING_PRECAPTURE = 2
-        private val STATE_WAITING_NON_PRECAPTURE = 3
-        private val STATE_PICTURE_TAKEN = 4
-        private val MAX_PREVIEW_WIDTH = 1920
-        private val MAX_PREVIEW_HEIGHT = 1080
+        private const val REQUEST_CAMERA_PERMISSION = 1
+        private const val FRAGMENT_DIALOG = "Skyfie"
+        private const val STATE_PREVIEW = 0
+        private const val STATE_WAITING_LOCK = 1
+        private const val STATE_WAITING_PRECAPTURE = 2
+        private const val STATE_WAITING_NON_PRECAPTURE = 3
+        private const val STATE_PICTURE_TAKEN = 4
+        private const val MAX_PREVIEW_WIDTH = 1920
+        private const val MAX_PREVIEW_HEIGHT = 1080
 
         init {
             ORIENTATIONS.append(Surface.ROTATION_0, 90)

@@ -24,6 +24,7 @@ import android.util.Log
 import android.util.Size
 import android.util.SparseIntArray
 import android.view.*
+import kotlinx.android.synthetic.main.fragment_custom_camera2.*
 import java.io.File
 import java.io.FileOutputStream
 import java.text.SimpleDateFormat
