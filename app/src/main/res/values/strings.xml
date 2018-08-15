@@ -3,7 +3,7 @@
     <string name="edit_message">Enter a message</string>
     <string name="button_launch_camera">Camera</string>
     <string name="button_image_capture">Snapshot</string>
-    <string name="button_video_capture">Video</string>
+    <string name="button_video_capture">Record</string>
     <string name="button_submit">Submit</string>
     <string name="request_permission">Skyfie needs camera permission.</string>
     <string name="camera_error">This device doesn\'t support Camera.</string>

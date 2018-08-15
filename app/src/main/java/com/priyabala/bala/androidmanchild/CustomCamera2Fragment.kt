@@ -772,7 +772,7 @@ class CustomCamera2Fragment : Fragment(), ActivityCompat.OnRequestPermissionsRes
                     updatePreview()
                     activity.runOnUiThread {
                         // UI
-                        video_button2.setText(R.string.stop)
+                        video_button2.setImageResource(android.R.drawable.presence_video_busy)
                         mIsRecordingVideo = true
 
                         // Start recording
@@ -799,7 +799,7 @@ class CustomCamera2Fragment : Fragment(), ActivityCompat.OnRequestPermissionsRes
         // UI
         activity.runOnUiThread {
             // UI
-            video_button2.setText(R.string.record)
+            video_button2.setImageResource(android.R.drawable.presence_video_online)
             mIsRecordingVideo = false
 
             // Stop recording
