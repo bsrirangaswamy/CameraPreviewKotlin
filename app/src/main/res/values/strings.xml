@@ -9,4 +9,6 @@
     <string name="camera_error">This device doesn\'t support Camera.</string>
     <string name="title_activity_display_custom_camera2">DisplayCustomCamera2Activity</string>
     <string name="action_settings">Settings</string>
+    <string name="record">Record</string>
+    <string name="stop">Stop</string>
 </resources>

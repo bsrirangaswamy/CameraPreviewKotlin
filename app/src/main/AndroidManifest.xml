@@ -40,7 +40,7 @@
                 android:name="android.support.PARENT_ACTIVITY"
                 android:value=".MainActivity" />
         </activity>
-        <activity android:name=".DisplayCustomCamera2Activity"></activity>
+        <activity android:name=".DisplayCustomCamera2Activity" />
     </application>
 
 </manifest>

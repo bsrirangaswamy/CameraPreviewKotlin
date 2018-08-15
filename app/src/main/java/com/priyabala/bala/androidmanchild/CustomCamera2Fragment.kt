@@ -39,12 +39,12 @@ import android.hardware.camera2.CaptureResult
 import android.hardware.camera2.TotalCaptureResult
 import android.media.Image
 import android.media.ImageReader
+import android.media.MediaRecorder
 import android.os.*
 import android.support.annotation.RequiresApi
 import android.support.v4.app.ActivityCompat
 import android.support.v4.app.DialogFragment
 import android.support.v4.app.Fragment
-import android.support.v4.content.ContextCompat
 import android.util.Log
 import android.util.Size
 import android.util.SparseIntArray
@@ -57,6 +57,7 @@ import android.widget.Toast
 import kotlinx.android.synthetic.main.fragment_custom_camera2.*
 import java.io.File
 import java.io.FileOutputStream
+import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.*
 import java.util.concurrent.Semaphore
@@ -67,20 +68,25 @@ class CustomCamera2Fragment : Fragment(), ActivityCompat.OnRequestPermissionsRes
 
     private var mCameraId: String? = null
     private var mTextureView: CustomFitTextureView? = null
-    private var mCaptureSession: CameraCaptureSession? = null
+    private var mPreviewSession: CameraCaptureSession? = null
     private var mCameraDevice: CameraDevice? = null
     private var mPreviewSize: Size? = null
+
+    private var mVideoSize: Size? = null
+    private var mMediaRecorder: MediaRecorder? = null
+    private var mIsRecordingVideo: Boolean = false
 
     private var mBackgroundThread: HandlerThread? = null
     private var mBackgroundHandler: Handler? = null
     private var mImageReader: ImageReader? = null
-    private var mPreviewRequestBuilder: CaptureRequest.Builder? = null
+    private var mPreviewBuilder: CaptureRequest.Builder? = null
     private var mPreviewRequest: CaptureRequest? = null
     private var mState = STATE_PREVIEW
     private val mCameraOpenCloseLock = Semaphore(1)
     private var mFlashSupported: Boolean = false
-    private var mSensorOrientation: Int = 0
     private var capturedImage: Image? = null
+
+    private var mSensorOrientation: Int = 0
 
     private val mediaTypeImage = 1
     private val mediaTypeVideo = 2
@@ -107,9 +113,12 @@ class CustomCamera2Fragment : Fragment(), ActivityCompat.OnRequestPermissionsRes
 
         override fun onOpened(cameraDevice: CameraDevice) {
             // This method is called when the camera is opened.  We start camera preview here.
-            mCameraOpenCloseLock.release()
             mCameraDevice = cameraDevice
-            createCameraPreviewSession()
+            mCameraOpenCloseLock.release()
+            startPreview()
+//            if (mTextureView != null) {
+//                configureTransform(mTextureView!!.width, mTextureView!!.height)
+//            }
         }
 
         override fun onDisconnected(cameraDevice: CameraDevice) {
@@ -207,13 +216,10 @@ class CustomCamera2Fragment : Fragment(), ActivityCompat.OnRequestPermissionsRes
 
     override fun onViewCreated(view: View?, savedInstanceState: Bundle?) {
         snapshot_button2.setOnClickListener(this)
+        video_button2.setOnClickListener(this)
         ok_button.setOnClickListener(this)
         cancel_button.setOnClickListener(this)
         mTextureView = view?.findViewById(R.id.customTextureView) as CustomFitTextureView
-    }
-
-    override fun onActivityCreated(savedInstanceState: Bundle?) {
-        super.onActivityCreated(savedInstanceState)
     }
 
     override fun onResume() {
@@ -238,11 +244,64 @@ class CustomCamera2Fragment : Fragment(), ActivityCompat.OnRequestPermissionsRes
         super.onPause()
     }
 
+    override fun onClick(view: View) {
+        when (view.id) {
+            R.id.snapshot_button2 -> {
+                takeSnapshot()
+            }
+            R.id.video_button2 -> {
+                if (mIsRecordingVideo) {
+                    stopRecordingVideo()
+                } else {
+                    startRecordingVideo()
+                }
+            }
+            R.id.ok_button -> {
+                submitPicture()
+            }
+            R.id.cancel_button -> {
+                cancelPicture()
+            }
+        }
+    }
+
+    /**
+     * Starts a background thread and its [Handler].
+     */
+    private fun startBackgroundThread() {
+        mBackgroundThread = HandlerThread("CameraBackground")
+        mBackgroundThread!!.start()
+        mBackgroundHandler = Handler(mBackgroundThread!!.looper)
+    }
+
+    /**
+     * Stops the background thread and its [Handler].
+     */
+    private fun stopBackgroundThread() {
+        mBackgroundThread!!.quitSafely()
+        try {
+            mBackgroundThread!!.join()
+            mBackgroundThread = null
+            mBackgroundHandler = null
+        } catch (e: InterruptedException) {
+            e.printStackTrace()
+        }
+    }
+
+    private fun shouldShowRequestPermissionRationale(permissions: Array<String>): Boolean {
+        for (permission in permissions) {
+            if (shouldShowRequestPermissionRationale(permission)) {
+                return true
+            }
+        }
+        return false
+    }
+
     private fun requestCameraPermission() {
-        if (shouldShowRequestPermissionRationale(Manifest.permission.CAMERA)) {
+        if (shouldShowRequestPermissionRationale(CAMERA_PERMISSIONS)) {
             ConfirmationDialog().show(childFragmentManager, FRAGMENT_DIALOG)
         } else {
-            requestPermissions(arrayOf(Manifest.permission.CAMERA), REQUEST_CAMERA_PERMISSION)
+            requestPermissions(CAMERA_PERMISSIONS, REQUEST_CAMERA_PERMISSION)
         }
     }
 
@@ -255,6 +314,15 @@ class CustomCamera2Fragment : Fragment(), ActivityCompat.OnRequestPermissionsRes
         } else {
             super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         }
+    }
+
+    private fun hasPermissionsGranted(permissions: Array<String>): Boolean {
+        for (permission in permissions) {
+            if (ActivityCompat.checkSelfPermission(activity, permission) != PackageManager.PERMISSION_GRANTED) {
+                return false
+            }
+        }
+        return true
     }
 
     /**
@@ -278,12 +346,14 @@ class CustomCamera2Fragment : Fragment(), ActivityCompat.OnRequestPermissionsRes
 
                 val map = characteristics.get(
                         CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP) ?: continue
+                mSensorOrientation = characteristics.get(CameraCharacteristics.SENSOR_ORIENTATION)
 
-                // For still image captures, we use the largest available size.
-                val largest = Collections.max(
-                        Arrays.asList(*map.getOutputSizes(ImageFormat.JPEG)),
-                        CompareSizesByArea())
-                mImageReader = ImageReader.newInstance(largest.width, largest.height,
+                mVideoSize = chooseVideoSize(map.getOutputSizes(MediaRecorder::class.java))
+//                // For still image captures, we use the largest available size.
+//                val largest = Collections.max(
+//                        Arrays.asList(*map.getOutputSizes(ImageFormat.JPEG)),
+//                        CompareSizesByArea())
+                mImageReader = ImageReader.newInstance(mVideoSize!!.width, mVideoSize!!.height,
                         ImageFormat.JPEG,1)
                 mImageReader!!.setOnImageAvailableListener(
                         mOnImageAvailableListener, mBackgroundHandler)
@@ -331,7 +401,7 @@ class CustomCamera2Fragment : Fragment(), ActivityCompat.OnRequestPermissionsRes
                 // garbage capture data.
                 mPreviewSize = chooseOptimalSize(map.getOutputSizes(SurfaceTexture::class.java),
                         rotatedPreviewWidth, rotatedPreviewHeight, maxPreviewWidth,
-                        maxPreviewHeight, largest)
+                        maxPreviewHeight, mVideoSize!!)
 
                 // We fit the aspect ratio of TextureView to the size of preview we picked.
                 val orientation = resources.configuration.orientation
@@ -364,12 +434,13 @@ class CustomCamera2Fragment : Fragment(), ActivityCompat.OnRequestPermissionsRes
      * Opens the camera specified by [Camera2BasicFragment.mCameraId].
      */
     private fun openCamera(width: Int, height: Int) {
-        if (ContextCompat.checkSelfPermission(activity, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+        if (!hasPermissionsGranted(CAMERA_PERMISSIONS)) {
             requestCameraPermission()
             return
         }
         setUpCameraOutputs(width, height)
         configureTransform(width, height)
+        mMediaRecorder = MediaRecorder()
         val activity = activity
         val manager = activity.getSystemService(Context.CAMERA_SERVICE) as CameraManager
         try {
@@ -391,10 +462,7 @@ class CustomCamera2Fragment : Fragment(), ActivityCompat.OnRequestPermissionsRes
     private fun closeCamera() {
         try {
             mCameraOpenCloseLock.acquire()
-            if (null != mCaptureSession) {
-                mCaptureSession!!.close()
-                mCaptureSession = null
-            }
+            closePreviewSession()
             if (null != mCameraDevice) {
                 mCameraDevice!!.close()
                 mCameraDevice = null
@@ -411,34 +479,14 @@ class CustomCamera2Fragment : Fragment(), ActivityCompat.OnRequestPermissionsRes
     }
 
     /**
-     * Starts a background thread and its [Handler].
-     */
-    private fun startBackgroundThread() {
-        mBackgroundThread = HandlerThread("CameraBackground")
-        mBackgroundThread!!.start()
-        mBackgroundHandler = Handler(mBackgroundThread!!.looper)
-    }
-
-    /**
-     * Stops the background thread and its [Handler].
-     */
-    private fun stopBackgroundThread() {
-        mBackgroundThread!!.quitSafely()
-        try {
-            mBackgroundThread!!.join()
-            mBackgroundThread = null
-            mBackgroundHandler = null
-        } catch (e: InterruptedException) {
-            e.printStackTrace()
-        }
-
-    }
-
-    /**
      * Creates a new [CameraCaptureSession] for camera preview.
      */
-    private fun createCameraPreviewSession() {
+    private fun startPreview() {
+        if (mCameraDevice == null || mTextureView == null || !mTextureView!!.isAvailable || mPreviewSize == null) {
+            return
+        }
         try {
+            closePreviewSession()
             val texture = mTextureView!!.surfaceTexture!!
 
             // We configure the size of default buffer to be the size of camera preview we want.
@@ -448,44 +496,46 @@ class CustomCamera2Fragment : Fragment(), ActivityCompat.OnRequestPermissionsRes
             val surface = Surface(texture)
 
             // We set up a CaptureRequest.Builder with the output Surface.
-            mPreviewRequestBuilder = mCameraDevice!!.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW)
-            mPreviewRequestBuilder!!.addTarget(surface)
+            mPreviewBuilder = mCameraDevice!!.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW)
+            mPreviewBuilder!!.addTarget(surface)
 
             // Here, we create a CameraCaptureSession for camera preview.
             mCameraDevice!!.createCaptureSession(Arrays.asList(surface, mImageReader!!.surface),
                     object : CameraCaptureSession.StateCallback() {
 
                         override fun onConfigured(cameraCaptureSession: CameraCaptureSession) {
-                            // The camera is already closed
-                            if (null == mCameraDevice) {
-                                return
-                            }
-
                             // When the session is ready, we start displaying the preview.
-                            mCaptureSession = cameraCaptureSession
-                            try {
-                                // Auto focus should be continuous for camera preview.
-                                mPreviewRequestBuilder!!.set(CaptureRequest.CONTROL_AF_MODE,
-                                        CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE)
-                                // Flash is automatically enabled when necessary.
-                                setAutoFlash(mPreviewRequestBuilder)
-
-                                // Finally, we start displaying the camera preview.
-                                mPreviewRequest = mPreviewRequestBuilder!!.build()
-                                mCaptureSession!!.setRepeatingRequest(mPreviewRequest!!,
-                                        mCaptureCallback, mBackgroundHandler)
-                            } catch (e: CameraAccessException) {
-                                e.printStackTrace()
-                            }
-
+                            mPreviewSession = cameraCaptureSession
+                            updatePreview()
                         }
 
                         override fun onConfigureFailed(
                                 cameraCaptureSession: CameraCaptureSession) {
                             showToast("Failed")
                         }
-                    }, null
+                    }, mBackgroundHandler
             )
+        } catch (e: CameraAccessException) {
+            e.printStackTrace()
+        }
+
+    }
+
+    private fun updatePreview() {
+        if (null == mCameraDevice) {
+            return
+        }
+        try {
+            // Auto focus should be continuous for camera preview.
+            mPreviewBuilder!!.set(CaptureRequest.CONTROL_AF_MODE,
+                    CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE)
+            // Flash is automatically enabled when necessary.
+            setAutoFlash(mPreviewBuilder)
+
+            // Finally, we start displaying the camera preview.
+            mPreviewRequest = mPreviewBuilder!!.build()
+            mPreviewSession!!.setRepeatingRequest(mPreviewRequest!!,
+                    mCaptureCallback, mBackgroundHandler)
         } catch (e: CameraAccessException) {
             e.printStackTrace()
         }
@@ -538,10 +588,10 @@ class CustomCamera2Fragment : Fragment(), ActivityCompat.OnRequestPermissionsRes
     private fun lockFocus() {
         try {
             // This is how to tell the camera to lock focus.
-            mPreviewRequestBuilder!!.set(CaptureRequest.CONTROL_AF_TRIGGER, CameraMetadata.CONTROL_AF_TRIGGER_START)
+            mPreviewBuilder!!.set(CaptureRequest.CONTROL_AF_TRIGGER, CameraMetadata.CONTROL_AF_TRIGGER_START)
             // Tell #mCaptureCallback to wait for the lock.
             mState = STATE_WAITING_LOCK
-            mCaptureSession!!.capture(mPreviewRequestBuilder!!.build(), mCaptureCallback, mBackgroundHandler)
+            mPreviewSession!!.capture(mPreviewBuilder!!.build(), mCaptureCallback, mBackgroundHandler)
         } catch (e: CameraAccessException) {
             e.printStackTrace()
         }
@@ -555,11 +605,11 @@ class CustomCamera2Fragment : Fragment(), ActivityCompat.OnRequestPermissionsRes
     private fun runPrecaptureSequence() {
         try {
             // This is how to tell the camera to trigger.
-            mPreviewRequestBuilder!!.set(CaptureRequest.CONTROL_AE_PRECAPTURE_TRIGGER,
+            mPreviewBuilder!!.set(CaptureRequest.CONTROL_AE_PRECAPTURE_TRIGGER,
                     CaptureRequest.CONTROL_AE_PRECAPTURE_TRIGGER_START)
             // Tell #mCaptureCallback to wait for the precapture sequence to be set.
             mState = STATE_WAITING_PRECAPTURE
-            mCaptureSession!!.capture(mPreviewRequestBuilder!!.build(), mCaptureCallback,
+            mPreviewSession!!.capture(mPreviewBuilder!!.build(), mCaptureCallback,
                     mBackgroundHandler)
         } catch (e: CameraAccessException) {
             e.printStackTrace()
@@ -604,9 +654,9 @@ class CustomCamera2Fragment : Fragment(), ActivityCompat.OnRequestPermissionsRes
                 }
             }
 
-            mCaptureSession!!.stopRepeating()
-            mCaptureSession!!.abortCaptures()
-            mCaptureSession!!.capture(captureBuilder.build(), CaptureCallback, null)
+            mPreviewSession!!.stopRepeating()
+            mPreviewSession!!.abortCaptures()
+            mPreviewSession!!.capture(captureBuilder.build(), CaptureCallback, null)
         } catch (e: CameraAccessException) {
             e.printStackTrace()
         }
@@ -624,7 +674,7 @@ class CustomCamera2Fragment : Fragment(), ActivityCompat.OnRequestPermissionsRes
         // We have to take that into account and rotate JPEG properly.
         // For devices with orientation of 90, we simply return our mapping from ORIENTATIONS.
         // For devices with orientation of 270, we need to rotate the JPEG 180 degrees.
-        return (ORIENTATIONS.get(rotation) + mSensorOrientation + 270) % 360
+        return (DEFAULT_ORIENTATIONS.get(rotation) + mSensorOrientation + 270) % 360
     }
 
     /**
@@ -634,33 +684,19 @@ class CustomCamera2Fragment : Fragment(), ActivityCompat.OnRequestPermissionsRes
     private fun unlockFocus() {
         try {
             // Reset the auto-focus trigger
-            mPreviewRequestBuilder!!.set(CaptureRequest.CONTROL_AF_TRIGGER,
+            mPreviewBuilder!!.set(CaptureRequest.CONTROL_AF_TRIGGER,
                     CameraMetadata.CONTROL_AF_TRIGGER_CANCEL)
-            setAutoFlash(mPreviewRequestBuilder)
-            mCaptureSession!!.capture(mPreviewRequestBuilder!!.build(), mCaptureCallback,
+            setAutoFlash(mPreviewBuilder)
+            mPreviewSession!!.capture(mPreviewBuilder!!.build(), mCaptureCallback,
                     mBackgroundHandler)
             // After this, the camera will go back to the normal state of preview.
             mState = STATE_PREVIEW
-            mCaptureSession!!.setRepeatingRequest(mPreviewRequest!!, mCaptureCallback,
+            mPreviewSession!!.setRepeatingRequest(mPreviewRequest!!, mCaptureCallback,
                     mBackgroundHandler)
         } catch (e: CameraAccessException) {
             e.printStackTrace()
         }
 
-    }
-
-    override fun onClick(view: View) {
-        when (view.id) {
-            R.id.snapshot_button2 -> {
-                takeSnapshot()
-            }
-            R.id.ok_button -> {
-                submitPicture()
-            }
-            R.id.cancel_button -> {
-                cancelPicture()
-            }
-        }
     }
 
     private fun setAutoFlash(requestBuilder: CaptureRequest.Builder?) {
@@ -683,6 +719,108 @@ class CustomCamera2Fragment : Fragment(), ActivityCompat.OnRequestPermissionsRes
     private fun cancelPicture() {
         closeCapturedImage()
         unlockFocus()
+    }
+
+    @Throws(IOException::class)
+    private fun setUpMediaRecorder() {
+        val activity = activity ?: return
+        mMediaRecorder!!.setAudioSource(MediaRecorder.AudioSource.MIC)
+        mMediaRecorder!!.setVideoSource(MediaRecorder.VideoSource.SURFACE)
+        mMediaRecorder!!.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+        mMediaRecorder!!.setOutputFile(getOutputMediaFile(mediaTypeVideo).toString())
+        mMediaRecorder!!.setVideoEncodingBitRate(10000000)
+        mMediaRecorder!!.setVideoFrameRate(30)
+        mMediaRecorder!!.setVideoSize(mVideoSize!!.width, mVideoSize!!.height)
+        mMediaRecorder!!.setVideoEncoder(MediaRecorder.VideoEncoder.H264)
+        mMediaRecorder!!.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+        val rotation = activity.windowManager.defaultDisplay.rotation
+        when (mSensorOrientation) {
+            SENSOR_ORIENTATION_DEFAULT_DEGREES -> mMediaRecorder!!.setOrientationHint(DEFAULT_ORIENTATIONS.get(rotation))
+            SENSOR_ORIENTATION_INVERSE_DEGREES -> mMediaRecorder!!.setOrientationHint(INVERSE_ORIENTATIONS.get(rotation))
+        }
+        mMediaRecorder!!.prepare()
+    }
+
+    private fun startRecordingVideo() {
+        if (mCameraDevice == null || mTextureView == null || !mTextureView!!.isAvailable || mPreviewSize == null) {
+            return
+        }
+        try {
+            closePreviewSession()
+            setUpMediaRecorder()
+            val texture = mTextureView?.surfaceTexture ?: return
+            texture.setDefaultBufferSize(mPreviewSize!!.width, mPreviewSize!!.height)
+            mPreviewBuilder = mCameraDevice!!.createCaptureRequest(CameraDevice.TEMPLATE_RECORD)
+            val surfaces = ArrayList<Surface>()
+
+            // Set up Surface for the camera preview
+            val previewSurface = Surface(texture)
+            surfaces.add(previewSurface)
+            mPreviewBuilder!!.addTarget(previewSurface)
+
+            // Set up Surface for the MediaRecorder
+            val recorderSurface = mMediaRecorder!!.surface
+            surfaces.add(recorderSurface)
+            mPreviewBuilder!!.addTarget(recorderSurface)
+
+            // Start a capture session
+            // Once the session starts, we can update the UI and start recording
+            mCameraDevice!!.createCaptureSession(surfaces, object : CameraCaptureSession.StateCallback() {
+
+                override fun onConfigured(cameraCaptureSession: CameraCaptureSession) {
+                    mPreviewSession = cameraCaptureSession
+                    updatePreview()
+                    activity.runOnUiThread {
+                        // UI
+                        video_button2.setText(R.string.stop)
+                        mIsRecordingVideo = true
+
+                        // Start recording
+                        mMediaRecorder?.start()
+                    }
+                }
+
+                override fun onConfigureFailed(cameraCaptureSession: CameraCaptureSession) {
+                    val activity = activity
+                    if (null != activity) {
+                        Toast.makeText(activity, "Failed", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }, mBackgroundHandler)
+        } catch (e: CameraAccessException) {
+            e.printStackTrace()
+        } catch (e: IOException) {
+            e.printStackTrace()
+        }
+
+    }
+
+    private fun stopRecordingVideo() {
+        // UI
+        activity.runOnUiThread {
+            // UI
+            video_button2.setText(R.string.record)
+            mIsRecordingVideo = false
+
+            // Stop recording
+            mMediaRecorder?.stop()
+            mMediaRecorder?.reset()
+        }
+
+        val activity = activity
+        if (null != activity) {
+            Toast.makeText(activity, "Video saved",
+                    Toast.LENGTH_SHORT).show()
+            Log.d(TAG, "Video saved")
+        }
+        startPreview()
+    }
+
+    private fun closePreviewSession() {
+        if (mPreviewSession != null) {
+            mPreviewSession?.close()
+            mPreviewSession = null
+        }
     }
 
     private fun save(bytes: ByteArray) {
@@ -751,17 +889,21 @@ class CustomCamera2Fragment : Fragment(), ActivityCompat.OnRequestPermissionsRes
 
     private fun buttonsVisibility(isCaptured: Boolean) {
         this@CustomCamera2Fragment.activity.runOnUiThread {
-            if (isCaptured) {
-                ok_button.visibility = View.VISIBLE
-                cancel_button.visibility = View.VISIBLE
-                snapshot_button2.visibility = View.INVISIBLE
-                video_button2.visibility = View.INVISIBLE
-            } else {
-                ok_button.visibility = View.INVISIBLE
-                cancel_button.visibility = View.INVISIBLE
-                snapshot_button2.visibility = View.VISIBLE
-                video_button2.visibility = View.VISIBLE
-            }
+//            if (isCaptured) {
+//                ok_button.visibility = View.VISIBLE
+//                cancel_button.visibility = View.VISIBLE
+//                snapshot_button2.visibility = View.INVISIBLE
+//                video_button2.visibility = View.INVISIBLE
+//            } else {
+//                ok_button.visibility = View.INVISIBLE
+//                cancel_button.visibility = View.INVISIBLE
+//                snapshot_button2.visibility = View.VISIBLE
+//                video_button2.visibility = View.VISIBLE
+//            }
+            ok_button.visibility = View.VISIBLE
+            cancel_button.visibility = View.VISIBLE
+            snapshot_button2.visibility = View.VISIBLE
+            video_button2.visibility = View.VISIBLE
         }
     }
     /**
@@ -818,11 +960,9 @@ class CustomCamera2Fragment : Fragment(), ActivityCompat.OnRequestPermissionsRes
             return AlertDialog.Builder(activity)
                     .setMessage(R.string.request_permission)
                     .setPositiveButton(android.R.string.ok, DialogInterface.OnClickListener { dialog, which ->
-                        parent.requestPermissions(arrayOf(Manifest.permission.CAMERA),
-                                REQUEST_CAMERA_PERMISSION)
+                        parent.requestPermissions(CAMERA_PERMISSIONS, REQUEST_CAMERA_PERMISSION)
                     })
-                    .setNegativeButton(android.R.string.cancel,
-                            DialogInterface.OnClickListener { dialog, which ->
+                    .setNegativeButton(android.R.string.cancel, DialogInterface.OnClickListener { dialog, which ->
                                 val activity = parent.activity
                                 activity?.finish()
                             })
@@ -835,7 +975,10 @@ class CustomCamera2Fragment : Fragment(), ActivityCompat.OnRequestPermissionsRes
          * Conversion from screen rotation to JPEG orientation.
          */
         private val TAG = CustomCamera2Fragment::class.java.simpleName
-        private val ORIENTATIONS = SparseIntArray()
+        private val DEFAULT_ORIENTATIONS = SparseIntArray()
+        private val INVERSE_ORIENTATIONS = SparseIntArray()
+        private const val SENSOR_ORIENTATION_DEFAULT_DEGREES = 90
+        private const val SENSOR_ORIENTATION_INVERSE_DEGREES = 270
         private const val REQUEST_CAMERA_PERMISSION = 1
         private const val FRAGMENT_DIALOG = "Skyfie"
         private const val STATE_PREVIEW = 0
@@ -846,11 +989,18 @@ class CustomCamera2Fragment : Fragment(), ActivityCompat.OnRequestPermissionsRes
         private const val MAX_PREVIEW_WIDTH = 1920
         private const val MAX_PREVIEW_HEIGHT = 1080
 
+        private val CAMERA_PERMISSIONS = arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO)
+
         init {
-            ORIENTATIONS.append(Surface.ROTATION_0, 90)
-            ORIENTATIONS.append(Surface.ROTATION_90, 0)
-            ORIENTATIONS.append(Surface.ROTATION_180, 270)
-            ORIENTATIONS.append(Surface.ROTATION_270, 180)
+            DEFAULT_ORIENTATIONS.append(Surface.ROTATION_0, 90)
+            DEFAULT_ORIENTATIONS.append(Surface.ROTATION_90, 0)
+            DEFAULT_ORIENTATIONS.append(Surface.ROTATION_180, 270)
+            DEFAULT_ORIENTATIONS.append(Surface.ROTATION_270, 180)
+
+            INVERSE_ORIENTATIONS.append(Surface.ROTATION_0, 270)
+            INVERSE_ORIENTATIONS.append(Surface.ROTATION_90, 180)
+            INVERSE_ORIENTATIONS.append(Surface.ROTATION_180, 90)
+            INVERSE_ORIENTATIONS.append(Surface.ROTATION_270, 0)
         }
 
         private fun chooseOptimalSize(choices: Array<Size>, textureViewWidth: Int,
@@ -883,6 +1033,16 @@ class CustomCamera2Fragment : Fragment(), ActivityCompat.OnRequestPermissionsRes
                 Log.e(TAG, "Couldn't find any suitable preview size")
                 return choices[0]
             }
+        }
+
+        private fun chooseVideoSize(choices: Array<Size>): Size {
+            for (size in choices) {
+                if (size.width == size.height * 4 / 3 && size.width <= 1080) {
+                    return size
+                }
+            }
+            Log.e(TAG, "Couldn't find any suitable video size")
+            return choices[choices.size - 1]
         }
 
         fun newInstance(): CustomCamera2Fragment {
