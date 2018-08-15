@@ -623,10 +623,10 @@ class CustomCamera2Fragment : Fragment(), ActivityCompat.OnRequestPermissionsRes
      */
     private fun captureStillPicture() {
         try {
-            val activity = activity
-            if (null == activity || null == mCameraDevice) {
+            if (mCameraDevice == null || mPreviewSession == null) {
                 return
             }
+            val activity = activity ?: return
             // This is the CaptureRequest.Builder that we use to take a picture.
             val captureBuilder = mCameraDevice!!.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE)
             captureBuilder.addTarget(mImageReader!!.surface)
@@ -640,7 +640,7 @@ class CustomCamera2Fragment : Fragment(), ActivityCompat.OnRequestPermissionsRes
             val rotation = activity.windowManager.defaultDisplay.rotation
             captureBuilder.set(CaptureRequest.JPEG_ORIENTATION, getOrientation(rotation))
 
-            val CaptureCallback = object : CameraCaptureSession.CaptureCallback() {
+            val captureCallback = object : CameraCaptureSession.CaptureCallback() {
 
                 override fun onCaptureStarted(session: CameraCaptureSession?, request: CaptureRequest?, timestamp: Long, frameNumber: Long) {
                     super.onCaptureStarted(session, request, timestamp, frameNumber)
@@ -656,7 +656,7 @@ class CustomCamera2Fragment : Fragment(), ActivityCompat.OnRequestPermissionsRes
 
             mPreviewSession!!.stopRepeating()
             mPreviewSession!!.abortCaptures()
-            mPreviewSession!!.capture(captureBuilder.build(), CaptureCallback, null)
+            mPreviewSession!!.capture(captureBuilder.build(), captureCallback, null)
         } catch (e: CameraAccessException) {
             e.printStackTrace()
         }
@@ -683,16 +683,16 @@ class CustomCamera2Fragment : Fragment(), ActivityCompat.OnRequestPermissionsRes
      */
     private fun unlockFocus() {
         try {
+            if (mPreviewBuilder == null || mPreviewSession == null || mPreviewRequest == null) {
+                return
+            }
             // Reset the auto-focus trigger
-            mPreviewBuilder!!.set(CaptureRequest.CONTROL_AF_TRIGGER,
-                    CameraMetadata.CONTROL_AF_TRIGGER_CANCEL)
+            mPreviewBuilder!!.set(CaptureRequest.CONTROL_AF_TRIGGER, CameraMetadata.CONTROL_AF_TRIGGER_CANCEL)
             setAutoFlash(mPreviewBuilder)
-            mPreviewSession!!.capture(mPreviewBuilder!!.build(), mCaptureCallback,
-                    mBackgroundHandler)
+            mPreviewSession!!.capture(mPreviewBuilder!!.build(), mCaptureCallback, mBackgroundHandler)
             // After this, the camera will go back to the normal state of preview.
             mState = STATE_PREVIEW
-            mPreviewSession!!.setRepeatingRequest(mPreviewRequest!!, mCaptureCallback,
-                    mBackgroundHandler)
+            mPreviewSession!!.setRepeatingRequest(mPreviewRequest!!, mCaptureCallback, mBackgroundHandler)
         } catch (e: CameraAccessException) {
             e.printStackTrace()
         }
@@ -742,7 +742,7 @@ class CustomCamera2Fragment : Fragment(), ActivityCompat.OnRequestPermissionsRes
     }
 
     private fun startRecordingVideo() {
-        if (mCameraDevice == null || mTextureView == null || !mTextureView!!.isAvailable || mPreviewSize == null) {
+        if (mCameraDevice == null || mTextureView == null || !mTextureView!!.isAvailable || mPreviewSize == null || mMediaRecorder == null) {
             return
         }
         try {
@@ -889,21 +889,17 @@ class CustomCamera2Fragment : Fragment(), ActivityCompat.OnRequestPermissionsRes
 
     private fun buttonsVisibility(isCaptured: Boolean) {
         this@CustomCamera2Fragment.activity.runOnUiThread {
-//            if (isCaptured) {
-//                ok_button.visibility = View.VISIBLE
-//                cancel_button.visibility = View.VISIBLE
-//                snapshot_button2.visibility = View.INVISIBLE
-//                video_button2.visibility = View.INVISIBLE
-//            } else {
-//                ok_button.visibility = View.INVISIBLE
-//                cancel_button.visibility = View.INVISIBLE
-//                snapshot_button2.visibility = View.VISIBLE
-//                video_button2.visibility = View.VISIBLE
-//            }
-            ok_button.visibility = View.VISIBLE
-            cancel_button.visibility = View.VISIBLE
-            snapshot_button2.visibility = View.VISIBLE
-            video_button2.visibility = View.VISIBLE
+            if (isCaptured) {
+                ok_button.visibility = View.VISIBLE
+                cancel_button.visibility = View.VISIBLE
+                snapshot_button2.visibility = View.INVISIBLE
+                video_button2.visibility = View.INVISIBLE
+            } else {
+                ok_button.visibility = View.INVISIBLE
+                cancel_button.visibility = View.INVISIBLE
+                snapshot_button2.visibility = View.VISIBLE
+                video_button2.visibility = View.VISIBLE
+            }
         }
     }
     /**
