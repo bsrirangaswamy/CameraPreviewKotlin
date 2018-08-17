@@ -29,7 +29,6 @@ class DisplayMessageActivity : AppCompatActivity() {
     private var mediaRecorder : MediaRecorder? = null
     private var isRecording : Boolean = false
     private var timer: Timer? = null
-
     val MEDIA_TYPE_IMAGE = 1
     val MEDIA_TYPE_VIDEO = 2
 

@@ -4,21 +4,10 @@
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    tools:context=".DisplayCustomCameraView">
+    tools:context=".CustomCamera2Fragment">
 
-    <FrameLayout
-        android:id="@+id/cameraSurfaceView"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        app:layout_constraintBottom_toBottomOf="parent"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent">
-
-    </FrameLayout>
-
-    <TextureView
-        android:id="@+id/textureViewPreview"
+    <com.priyabala.bala.androidmanchild.CustomFitTextureView
+        android:id="@+id/customTextureView"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         app:layout_constraintBottom_toBottomOf="parent"
@@ -36,38 +25,43 @@
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent">
 
-        <Button
+        <ImageButton
             android:id="@+id/snapshot_button2"
-            android:layout_width="match_parent"
+            android:layout_width="70dp"
             android:layout_height="match_parent"
             android:layout_weight="1"
-            android:onClick="takePicture2"
-            android:text="@string/button_image_capture" />
+            android:scaleType="fitCenter"
+            android:src="@android:drawable/ic_menu_camera" />
 
-        <Button
+        <ImageButton
             android:id="@+id/video_button2"
-            android:layout_width="match_parent"
+            android:layout_width="70dp"
             android:layout_height="match_parent"
             android:layout_weight="1"
-            android:text="@string/button_video_capture" />
+            android:scaleType="fitCenter"
+            android:src="@android:drawable/presence_video_online" />
     </LinearLayout>
 
-    <Button
-        android:id="@+id/dismiss_button"
-        android:layout_width="100dp"
-        android:layout_height="wrap_content"
-        android:onClick="cancelPicture"
-        android:text="@android:string/cancel"
+    <ImageButton
+        android:id="@+id/cancel_button"
+        android:layout_width="70dp"
+        android:layout_height="70dp"
+        android:background="@android:color/transparent"
+        android:scaleType="fitCenter"
+        android:src="@android:drawable/btn_dialog"
+        android:visibility="invisible"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent" />
 
-    <Button
-        android:id="@+id/submit_button"
-        android:layout_width="100dp"
-        android:layout_height="wrap_content"
+    <ImageButton
+        android:id="@+id/ok_button"
+        android:layout_width="70dp"
+        android:layout_height="70dp"
         android:layout_marginEnd="1dp"
-        android:onClick="submitPicture"
-        android:text="@string/button_submit"
+        android:background="@android:color/transparent"
+        android:scaleType="fitCenter"
+        android:src="@android:drawable/checkbox_on_background"
+        android:visibility="invisible"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintTop_toTopOf="parent" />
 
