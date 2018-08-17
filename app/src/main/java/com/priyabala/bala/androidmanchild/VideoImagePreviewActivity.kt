@@ -4,6 +4,7 @@ import android.app.Activity
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.widget.MediaController
 import kotlinx.android.synthetic.main.activity_video_image_preview.*
 
 class VideoImagePreviewActivity : Activity() {
@@ -15,6 +16,9 @@ class VideoImagePreviewActivity : Activity() {
         setContentView(R.layout.activity_video_image_preview)
         videoStringPath = intent.getStringExtra(EXTRA_VIDEO_PATH)
         imageStringPath = intent.getStringExtra(EXTRA_IMAGE_PATH)
+        if (videoStringPath != null) {
+            setupVideo()
+        }
     }
 
     override fun onStart() {
@@ -36,6 +40,12 @@ class VideoImagePreviewActivity : Activity() {
 
     private fun getMedia(mediaPathString: String): Uri {
         return Uri.parse(mediaPathString)
+    }
+
+    private fun setupVideo() {
+        val mController = MediaController(this)
+        mController.setMediaPlayer(video_view)
+        video_view.setMediaController(mController)
     }
 
     private fun initializer() {
