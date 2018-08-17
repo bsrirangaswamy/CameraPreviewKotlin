@@ -21,6 +21,7 @@ import android.app.AlertDialog
 import android.app.Dialog
 import android.content.Context
 import android.content.DialogInterface
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.graphics.ImageFormat
@@ -87,6 +88,7 @@ class CustomCamera2Fragment : Fragment(), ActivityCompat.OnRequestPermissionsRes
     private var capturedImage: Image? = null
 
     private var mSensorOrientation: Int = 0
+    private var videoFilePath: String? = null
 
     private val mediaTypeImage = 1
     private val mediaTypeVideo = 2
@@ -727,7 +729,8 @@ class CustomCamera2Fragment : Fragment(), ActivityCompat.OnRequestPermissionsRes
         mMediaRecorder!!.setAudioSource(MediaRecorder.AudioSource.MIC)
         mMediaRecorder!!.setVideoSource(MediaRecorder.VideoSource.SURFACE)
         mMediaRecorder!!.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
-        mMediaRecorder!!.setOutputFile(getOutputMediaFile(mediaTypeVideo).toString())
+        videoFilePath = getOutputMediaFile(mediaTypeVideo).toString()
+        mMediaRecorder!!.setOutputFile(videoFilePath!!)
         mMediaRecorder!!.setVideoEncodingBitRate(10000000)
         mMediaRecorder!!.setVideoFrameRate(30)
         mMediaRecorder!!.setVideoSize(mVideoSize!!.width, mVideoSize!!.height)
@@ -814,6 +817,10 @@ class CustomCamera2Fragment : Fragment(), ActivityCompat.OnRequestPermissionsRes
             Log.d(TAG, "Video saved")
         }
         startPreview()
+        val filePath = videoFilePath ?: return
+        val videoIntent = Intent(activity, VideoImagePreviewActivity::class.java)
+        videoIntent.putExtra(EXTRA_VIDEO_PATH, filePath)
+        startActivity(videoIntent)
     }
 
     private fun closePreviewSession() {
