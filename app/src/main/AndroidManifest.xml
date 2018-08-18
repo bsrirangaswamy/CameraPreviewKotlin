@@ -6,6 +6,7 @@
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.INTERNET" />
 
     <uses-feature
         android:name="android.hardware.camera"
@@ -41,6 +42,7 @@
                 android:value=".MainActivity" />
         </activity>
         <activity android:name=".DisplayCustomCamera2Activity" />
+        <activity android:name=".VideoImagePreviewActivity"></activity>
     </application>
 
 </manifest>

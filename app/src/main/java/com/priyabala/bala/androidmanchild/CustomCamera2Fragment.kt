@@ -21,6 +21,7 @@ import android.app.AlertDialog
 import android.app.Dialog
 import android.content.Context
 import android.content.DialogInterface
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.graphics.ImageFormat
@@ -84,9 +85,9 @@ class CustomCamera2Fragment : Fragment(), ActivityCompat.OnRequestPermissionsRes
     private var mState = STATE_PREVIEW
     private val mCameraOpenCloseLock = Semaphore(1)
     private var mFlashSupported: Boolean = false
-    private var capturedImage: Image? = null
 
     private var mSensorOrientation: Int = 0
+    private var videoFilePath: String? = null
 
     private val mediaTypeImage = 1
     private val mediaTypeVideo = 2
@@ -138,12 +139,14 @@ class CustomCamera2Fragment : Fragment(), ActivityCompat.OnRequestPermissionsRes
     }
 
     private val mOnImageAvailableListener = ImageReader.OnImageAvailableListener { reader ->
-        closeCapturedImage()
         buttonsVisibility(true)
         try {
-            capturedImage = reader.acquireLatestImage()
+            val image = reader.acquireLatestImage()
+            val buffer = image.planes[0].buffer
+            val bytes = ByteArray(buffer.capacity())
+            buffer.get(bytes)
+            save(bytes)
         } catch (e: Exception) {
-            closeCapturedImage()
             Log.v(TAG, "Bala CameraImageAvailableListener exception = $e")
         }
     }
@@ -217,8 +220,6 @@ class CustomCamera2Fragment : Fragment(), ActivityCompat.OnRequestPermissionsRes
     override fun onViewCreated(view: View?, savedInstanceState: Bundle?) {
         snapshot_button2.setOnClickListener(this)
         video_button2.setOnClickListener(this)
-        ok_button.setOnClickListener(this)
-        cancel_button.setOnClickListener(this)
         mTextureView = view?.findViewById(R.id.customTextureView) as CustomFitTextureView
     }
 
@@ -238,7 +239,6 @@ class CustomCamera2Fragment : Fragment(), ActivityCompat.OnRequestPermissionsRes
     }
 
     override fun onPause() {
-        closeCapturedImage()
         closeCamera()
         stopBackgroundThread()
         super.onPause()
@@ -255,12 +255,6 @@ class CustomCamera2Fragment : Fragment(), ActivityCompat.OnRequestPermissionsRes
                 } else {
                     startRecordingVideo()
                 }
-            }
-            R.id.ok_button -> {
-                submitPicture()
-            }
-            R.id.cancel_button -> {
-                cancelPicture()
             }
         }
     }
@@ -706,28 +700,14 @@ class CustomCamera2Fragment : Fragment(), ActivityCompat.OnRequestPermissionsRes
         }
     }
 
-    private fun submitPicture() {
-        val image = capturedImage ?: return
-        val mFile = getOutputMediaFile(mediaTypeImage) ?: return
-        val buffer = image.planes[0].buffer ?: return
-        val bytes = ByteArray(buffer.capacity())
-        buffer.get(bytes)
-        showToast("Bala camera capture has completed " + mFile)
-        save(bytes)
-    }
-
-    private fun cancelPicture() {
-        closeCapturedImage()
-        unlockFocus()
-    }
-
     @Throws(IOException::class)
     private fun setUpMediaRecorder() {
         val activity = activity ?: return
         mMediaRecorder!!.setAudioSource(MediaRecorder.AudioSource.MIC)
         mMediaRecorder!!.setVideoSource(MediaRecorder.VideoSource.SURFACE)
         mMediaRecorder!!.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
-        mMediaRecorder!!.setOutputFile(getOutputMediaFile(mediaTypeVideo).toString())
+        videoFilePath = getOutputMediaFile(mediaTypeVideo).toString()
+        mMediaRecorder!!.setOutputFile(videoFilePath!!)
         mMediaRecorder!!.setVideoEncodingBitRate(10000000)
         mMediaRecorder!!.setVideoFrameRate(30)
         mMediaRecorder!!.setVideoSize(mVideoSize!!.width, mVideoSize!!.height)
@@ -809,11 +789,13 @@ class CustomCamera2Fragment : Fragment(), ActivityCompat.OnRequestPermissionsRes
 
         val activity = activity
         if (null != activity) {
-            Toast.makeText(activity, "Video saved",
-                    Toast.LENGTH_SHORT).show()
             Log.d(TAG, "Video saved")
         }
         startPreview()
+        val filePath = videoFilePath ?: return
+        val videoIntent = Intent(activity, VideoImagePreviewActivity::class.java)
+        videoIntent.putExtra(EXTRA_VIDEO_PATH, filePath)
+        startActivity(videoIntent)
     }
 
     private fun closePreviewSession() {
@@ -839,8 +821,12 @@ class CustomCamera2Fragment : Fragment(), ActivityCompat.OnRequestPermissionsRes
             } catch (e: Exception) {
                 Log.v(TAG, "Bala save exception = $e")
             }
-            closeCapturedImage()
             unlockFocus()
+            showToast("Bala camera capture has completed " + file12)
+            val filePath = file12.toString()
+            val videoIntent = Intent(activity, VideoImagePreviewActivity::class.java)
+            videoIntent.putExtra(EXTRA_IMAGE_PATH, filePath)
+            startActivity(videoIntent)
         }
     }
 
@@ -880,23 +866,12 @@ class CustomCamera2Fragment : Fragment(), ActivityCompat.OnRequestPermissionsRes
         return mediaFile
     }
 
-    private fun closeCapturedImage() {
-        if (capturedImage != null) {
-            capturedImage!!.close()
-        }
-        buttonsVisibility(false)
-    }
-
     private fun buttonsVisibility(isCaptured: Boolean) {
         this@CustomCamera2Fragment.activity.runOnUiThread {
             if (isCaptured) {
-                ok_button.visibility = View.VISIBLE
-                cancel_button.visibility = View.VISIBLE
                 snapshot_button2.visibility = View.INVISIBLE
                 video_button2.visibility = View.INVISIBLE
             } else {
-                ok_button.visibility = View.INVISIBLE
-                cancel_button.visibility = View.INVISIBLE
                 snapshot_button2.visibility = View.VISIBLE
                 video_button2.visibility = View.VISIBLE
             }
