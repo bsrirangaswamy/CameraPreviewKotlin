@@ -15,6 +15,8 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.hardware.Camera.PictureCallback
+import android.support.v4.app.ActivityCompat
+import android.support.v4.content.ContextCompat
 import android.widget.Toast
 import kotlinx.android.synthetic.main.fragment_custom_camera.*
 import java.io.File
@@ -35,9 +37,6 @@ class CustomCameraFragment : Fragment(), View.OnClickListener {
     private var videoFilePath: String? = null
     private var timer: Timer? = null
 
-    private val mediaTypeImage = 1
-    private val mediaTypeVideo = 2
-
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?,
                               savedInstanceState: Bundle?): View? {
         // Inflate the layout for this fragment
@@ -49,13 +48,7 @@ class CustomCameraFragment : Fragment(), View.OnClickListener {
         snapshot_button.setOnClickListener(this)
         video_button.setOnClickListener(this)
         if (checkCameraHardware(this.activity)) {
-            camera = getCameraInstance()
-            if (camera != null) {
-                cameraPreview = CameraPreview(this.activity, camera!!)
-                val preview = view?.findViewById<FrameLayout>(R.id.camera_preview) ?: return
-                preview.addView(cameraPreview)
-            }
-            println("Bala device camera object = " + camera)
+            openCamera()
         }
     }
 
@@ -68,22 +61,18 @@ class CustomCameraFragment : Fragment(), View.OnClickListener {
 
     private fun takeSnapshot() {
         if (camera != null) {
-            println("Bala takePicture 1")
             camera!!.takePicture(null, null, this.mPicture)
         }
-        println("Bala takePicture 2")
     }
 
     private fun takeVideo() {
         if (camera != null) {
-            println("Bala takeVideo 1")
             if (mIsRecordingVideo) {
                 stopRecordingVideo()
             } else {
                 startRecordingVideo()
             }
         }
-        println("Bala takeVideo 2")
     }
 
     override fun onClick(view: View) {
@@ -97,39 +86,54 @@ class CustomCameraFragment : Fragment(), View.OnClickListener {
         }
     }
 
+    private fun openCamera() {
+        camera = getCameraInstance() ?: return
+        val permissionCheck = ContextCompat.checkSelfPermission(this.context, android.Manifest.permission.CAMERA)
+
+        if (permissionCheck != PackageManager.PERMISSION_GRANTED) {
+            if (ActivityCompat.shouldShowRequestPermissionRationale(this.activity, android.Manifest.permission.CAMERA)) {
+
+            } else {
+                ActivityCompat.requestPermissions(this.activity, arrayOf(android.Manifest.permission.CAMERA), CAMERA1_PERMISSION_REQUEST_ID)
+                showToast("Camera 1 Request permission")
+            }
+        } else {
+            showToast("Camera 1 permission already granted")
+            cameraPreview = CameraPreview(this.activity, camera!!)
+            val preview = view?.findViewById<FrameLayout>(R.id.camera_preview) ?: return
+            preview.addView(cameraPreview)
+        }
+    }
+
     /** A safe way to get an instance of the Camera object.  */
-    fun getCameraInstance(): Camera? {
+    private fun getCameraInstance(): Camera? {
         var c: Camera? = null
         try {
             c = Camera.open() // attempt to get a Camera instance
         } catch (e: Exception) {
             // Camera is not available (in use or does not exist)
-            println("Bala device camera object error = " + e)
         }
         return c // returns null if camera is unavailable
     }
 
     private var mPicture: PictureCallback = PictureCallback { data, camera ->
-        val pictureFile = getOutputMediaFile(mediaTypeImage) ?: return@PictureCallback
+        val pictureFile = getOutputMediaFile(MEDIA_TYPE_IMAGE) ?: return@PictureCallback
         var outputStream: FileOutputStream? = null
 
         try {
             outputStream = FileOutputStream(pictureFile)
             outputStream.write(data)
-            println("Bala Picture Call back 1")
         } catch (e: FileNotFoundException) {
-            println("Bala Picture Call back FileNotFoundException = $e")
         } catch (e: IOException) {
-            println("Bala Picture Call back IOException = $e")
         } finally {
             try {
                 if (outputStream != null) {
                     outputStream!!.close()
                 }
             } catch (e: Exception) {
-                Log.v(CustomCameraFragment.TAG, "Bala save exception = $e")
+                Log.v(CustomCameraFragment.TAG, "Save exception = $e")
             }
-            showToast("Bala camera capture has completed " + pictureFile)
+            showToast("Camera capture has completed " + pictureFile)
             val filePath = pictureFile.toString()
             val snapshotIntent = Intent(activity, VideoImagePreviewActivity::class.java)
             snapshotIntent.putExtra(EXTRA_IMAGE_PATH, filePath)
@@ -156,7 +160,7 @@ class CustomCameraFragment : Fragment(), View.OnClickListener {
         mMediaRecorder!!.setProfile(CamcorderProfile.get(CamcorderProfile.QUALITY_HIGH))
 
         // Step 4: Set output file
-        videoFilePath = getOutputMediaFile(mediaTypeVideo).toString()
+        videoFilePath = getOutputMediaFile(MEDIA_TYPE_VIDEO).toString()
         mMediaRecorder!!.setOutputFile(videoFilePath!!)
 
         // Step 5: Set the preview output
@@ -182,10 +186,6 @@ class CustomCameraFragment : Fragment(), View.OnClickListener {
 
     /** Create a File for saving an image or video  */
     private fun getOutputMediaFile(type: Int): File? {
-        // To be safe, you should check that the SDCard is mounted
-        // using Environment.getExternalStorageState() before doing this.
-        println("Bala get external storage state = " + Environment.getExternalStorageState())
-
         val mediaStorageDir = File(Environment.getExternalStoragePublicDirectory(
                 Environment.DIRECTORY_PICTURES), "AndroidManChild")
         // This location works best if you want the created images to be shared
@@ -202,22 +202,20 @@ class CustomCameraFragment : Fragment(), View.OnClickListener {
         // Create a media file name
         val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss").format(Date())
         val mediaFile: File
-        if (type == mediaTypeImage) {
+        if (type == MEDIA_TYPE_IMAGE) {
             mediaFile = File(mediaStorageDir.path + File.separator +
                     "IMG_" + timeStamp + ".jpg")
-        } else if (type == mediaTypeVideo) {
+        } else if (type == MEDIA_TYPE_VIDEO) {
             mediaFile = File(mediaStorageDir.path + File.separator +
                     "VID_" + timeStamp + ".mp4")
         } else {
             return null
         }
 
-        println("Bala getOutputMediaFile media file")
-
         return mediaFile
     }
 
-    fun startRecordingVideo() {
+    private fun startRecordingVideo() {
         // initialize video camera
         if (prepareVideoRecorder()) {
             // Camera is available and unlocked, MediaRecorder is prepared,
@@ -254,15 +252,14 @@ class CustomCameraFragment : Fragment(), View.OnClickListener {
         startActivity(videoIntent)
     }
 
-    fun startTimer() {
+    private fun startTimer() {
         timer = Timer()
         timer!!.schedule(10000) {
             stopRecordingVideo()
-            println("Bala timer executed")
         }
     }
 
-    fun stopTimer() {
+    private fun stopTimer() {
         timer?.cancel()
     }
 
@@ -295,6 +292,9 @@ class CustomCameraFragment : Fragment(), View.OnClickListener {
 
     companion object {
         private val TAG = CustomCameraFragment::class.java.simpleName
+        private const val CAMERA1_PERMISSION_REQUEST_ID: Int = 1242
+        private const val MEDIA_TYPE_IMAGE = 1
+        private const val MEDIA_TYPE_VIDEO = 2
 
         fun newInstance(): CustomCameraFragment {
             return CustomCameraFragment()
