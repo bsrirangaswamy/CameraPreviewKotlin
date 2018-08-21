@@ -46,6 +46,7 @@ import android.support.annotation.RequiresApi
 import android.support.v4.app.ActivityCompat
 import android.support.v4.app.DialogFragment
 import android.support.v4.app.Fragment
+import android.support.v4.content.ContextCompat
 import android.util.Log
 import android.util.Size
 import android.util.SparseIntArray
@@ -63,6 +64,7 @@ import java.text.SimpleDateFormat
 import java.util.*
 import java.util.concurrent.Semaphore
 import java.util.concurrent.TimeUnit
+import kotlin.concurrent.schedule
 
 @RequiresApi(Build.VERSION_CODES.LOLLIPOP)
 class CustomCamera2Fragment : Fragment(), ActivityCompat.OnRequestPermissionsResultCallback, View.OnClickListener {
@@ -88,9 +90,7 @@ class CustomCamera2Fragment : Fragment(), ActivityCompat.OnRequestPermissionsRes
 
     private var mSensorOrientation: Int = 0
     private var videoFilePath: String? = null
-
-    private val mediaTypeImage = 1
-    private val mediaTypeVideo = 2
+    private var timer: Timer? = null
 
     private val mSurfaceTextureListener = object : TextureView.SurfaceTextureListener {
 
@@ -147,7 +147,7 @@ class CustomCamera2Fragment : Fragment(), ActivityCompat.OnRequestPermissionsRes
             buffer.get(bytes)
             save(bytes)
         } catch (e: Exception) {
-            Log.v(TAG, "Bala CameraImageAvailableListener exception = $e")
+            Log.v(TAG, "CameraImageAvailableListener exception = $e")
         }
     }
 
@@ -207,11 +207,6 @@ class CustomCamera2Fragment : Fragment(), ActivityCompat.OnRequestPermissionsRes
 
     }
 
-    private fun showToast(text: String) {
-        val activity = activity
-        activity?.runOnUiThread { Toast.makeText(activity, text, Toast.LENGTH_SHORT).show() }
-    }
-
     override fun onCreateView(inflater: LayoutInflater?, container: ViewGroup?,
                               savedInstanceState: Bundle?): View? {
         return inflater!!.inflate(R.layout.fragment_custom_camera2, container, false)
@@ -239,6 +234,7 @@ class CustomCamera2Fragment : Fragment(), ActivityCompat.OnRequestPermissionsRes
     }
 
     override fun onPause() {
+        stopTimer()
         closeCamera()
         stopBackgroundThread()
         super.onPause()
@@ -250,11 +246,7 @@ class CustomCamera2Fragment : Fragment(), ActivityCompat.OnRequestPermissionsRes
                 takeSnapshot()
             }
             R.id.video_button2 -> {
-                if (mIsRecordingVideo) {
-                    stopRecordingVideo()
-                } else {
-                    startRecordingVideo()
-                }
+                takeVideo()
             }
         }
     }
@@ -424,9 +416,6 @@ class CustomCamera2Fragment : Fragment(), ActivityCompat.OnRequestPermissionsRes
 
     }
 
-    /**
-     * Opens the camera specified by [Camera2BasicFragment.mCameraId].
-     */
     private fun openCamera(width: Int, height: Int) {
         if (!hasPermissionsGranted(CAMERA_PERMISSIONS)) {
             requestCameraPermission()
@@ -437,17 +426,26 @@ class CustomCamera2Fragment : Fragment(), ActivityCompat.OnRequestPermissionsRes
         mMediaRecorder = MediaRecorder()
         val activity = activity
         val manager = activity.getSystemService(Context.CAMERA_SERVICE) as CameraManager
-        try {
-            if (!mCameraOpenCloseLock.tryAcquire(2500, TimeUnit.MILLISECONDS)) {
-                throw RuntimeException("Time out waiting to lock camera opening.")
-            }
-            manager.openCamera(mCameraId!!, mStateCallback, mBackgroundHandler)
-        } catch (e: CameraAccessException) {
-            e.printStackTrace()
-        } catch (e: InterruptedException) {
-            throw RuntimeException("Interrupted while trying to lock camera opening.", e)
-        }
+        val permissionCheck = ContextCompat.checkSelfPermission(this.context, android.Manifest.permission.CAMERA)
 
+        if (permissionCheck != PackageManager.PERMISSION_GRANTED) {
+            if (ActivityCompat.shouldShowRequestPermissionRationale(this.activity, android.Manifest.permission.CAMERA)) {
+
+            } else {
+                ActivityCompat.requestPermissions(this.activity, arrayOf(android.Manifest.permission.CAMERA), CAMERA2_PERMISSION_REQUEST_ID)
+                showToast("Camera 2 Request permission")
+            }
+        } else {
+            showToast("Camera 2 permission already granted")
+            try {
+                if (!mCameraOpenCloseLock.tryAcquire(2500, TimeUnit.MILLISECONDS)) {
+                    throw RuntimeException("Time out waiting to lock camera opening.")
+                }
+                manager.openCamera(mCameraId!!, mStateCallback, mBackgroundHandler)
+            } catch (e: CameraAccessException) {
+                e.printStackTrace()
+            }
+        }
     }
 
     /**
@@ -576,6 +574,14 @@ class CustomCamera2Fragment : Fragment(), ActivityCompat.OnRequestPermissionsRes
         lockFocus()
     }
 
+    private fun takeVideo() {
+        if (mIsRecordingVideo) {
+            stopRecordingVideo()
+        } else {
+            startRecordingVideo()
+        }
+    }
+
     /**
      * Lock the focus as the first step for a still image capture.
      */
@@ -638,13 +644,13 @@ class CustomCamera2Fragment : Fragment(), ActivityCompat.OnRequestPermissionsRes
 
                 override fun onCaptureStarted(session: CameraCaptureSession?, request: CaptureRequest?, timestamp: Long, frameNumber: Long) {
                     super.onCaptureStarted(session, request, timestamp, frameNumber)
-                    Log.v(TAG, "Bala camera capture has started")
+                    Log.v(TAG, "Camera capture has started")
                 }
                 override fun onCaptureCompleted(session: CameraCaptureSession,
                                                 request: CaptureRequest,
                                                 result: TotalCaptureResult) {
                     super.onCaptureCompleted(session, request, result)
-                    Log.v(TAG, "Bala camera capture has completed")
+                    Log.v(TAG, "Camera capture has completed")
                 }
             }
 
@@ -706,7 +712,7 @@ class CustomCamera2Fragment : Fragment(), ActivityCompat.OnRequestPermissionsRes
         mMediaRecorder!!.setAudioSource(MediaRecorder.AudioSource.MIC)
         mMediaRecorder!!.setVideoSource(MediaRecorder.VideoSource.SURFACE)
         mMediaRecorder!!.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
-        videoFilePath = getOutputMediaFile(mediaTypeVideo).toString()
+        videoFilePath = getOutputMediaFile(MEDIA_TYPE_VIDEO).toString()
         mMediaRecorder!!.setOutputFile(videoFilePath!!)
         mMediaRecorder!!.setVideoEncodingBitRate(10000000)
         mMediaRecorder!!.setVideoFrameRate(30)
@@ -751,13 +757,11 @@ class CustomCamera2Fragment : Fragment(), ActivityCompat.OnRequestPermissionsRes
                     mPreviewSession = cameraCaptureSession
                     updatePreview()
                     activity.runOnUiThread {
-                        // UI
                         video_button2.setImageResource(android.R.drawable.presence_video_busy)
                         mIsRecordingVideo = true
-
-                        // Start recording
                         mMediaRecorder?.start()
                     }
+                    startTimer()
                 }
 
                 override fun onConfigureFailed(cameraCaptureSession: CameraCaptureSession) {
@@ -781,12 +785,11 @@ class CustomCamera2Fragment : Fragment(), ActivityCompat.OnRequestPermissionsRes
             // UI
             video_button2.setImageResource(android.R.drawable.presence_video_online)
             mIsRecordingVideo = false
-
-            // Stop recording
             mMediaRecorder?.stop()
             mMediaRecorder?.reset()
         }
 
+        stopTimer()
         val activity = activity
         if (null != activity) {
             Log.d(TAG, "Video saved")
@@ -806,10 +809,10 @@ class CustomCamera2Fragment : Fragment(), ActivityCompat.OnRequestPermissionsRes
     }
 
     private fun save(bytes: ByteArray) {
-        val file12 = getOutputMediaFile(mediaTypeImage)
+        val pictureFile = getOutputMediaFile(MEDIA_TYPE_IMAGE)
         var outputStream: FileOutputStream? = null
         try {
-            outputStream = FileOutputStream(file12)
+            outputStream = FileOutputStream(pictureFile)
             outputStream!!.write(bytes)
         } catch (e: Exception) {
             e.printStackTrace()
@@ -819,22 +822,18 @@ class CustomCamera2Fragment : Fragment(), ActivityCompat.OnRequestPermissionsRes
                     outputStream!!.close()
                 }
             } catch (e: Exception) {
-                Log.v(TAG, "Bala save exception = $e")
+                Log.v(TAG, "Save exception = $e")
             }
             unlockFocus()
-            showToast("Bala camera capture has completed " + file12)
-            val filePath = file12.toString()
-            val videoIntent = Intent(activity, VideoImagePreviewActivity::class.java)
-            videoIntent.putExtra(EXTRA_IMAGE_PATH, filePath)
-            startActivity(videoIntent)
+            showToast("Camera2 capture has completed " + pictureFile)
+            val filePath = pictureFile.toString()
+            val snapshotIntent = Intent(activity, VideoImagePreviewActivity::class.java)
+            snapshotIntent.putExtra(EXTRA_IMAGE_PATH, filePath)
+            startActivity(snapshotIntent)
         }
     }
 
     private fun getOutputMediaFile(type: Int): File? {
-        // To be safe, you should check that the SDCard is mounted
-        // using Environment.getExternalStorageState() before doing this.
-        println("Bala get external storage state = " + Environment.getExternalStorageState())
-
         val mediaStorageDir = File(Environment.getExternalStoragePublicDirectory(
                 Environment.DIRECTORY_PICTURES), "AndroidManChild")
         // This location works best if you want the created images to be shared
@@ -851,17 +850,15 @@ class CustomCamera2Fragment : Fragment(), ActivityCompat.OnRequestPermissionsRes
         // Create a media file name
         val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss").format(Date())
         val mediaFile: File
-        if (type == mediaTypeImage) {
+        if (type == MEDIA_TYPE_IMAGE) {
             mediaFile = File(mediaStorageDir.path + File.separator +
                     "IMG_" + timeStamp + ".jpg")
-        } else if (type == mediaTypeVideo) {
+        } else if (type == MEDIA_TYPE_VIDEO) {
             mediaFile = File(mediaStorageDir.path + File.separator +
                     "VID_" + timeStamp + ".mp4")
         } else {
             return null
         }
-
-        println("Bala getOutputMediaFile media file")
 
         return mediaFile
     }
@@ -877,6 +874,23 @@ class CustomCamera2Fragment : Fragment(), ActivityCompat.OnRequestPermissionsRes
             }
         }
     }
+
+    fun startTimer() {
+        timer = Timer()
+        timer!!.schedule(10000) {
+            stopRecordingVideo()
+        }
+    }
+
+    fun stopTimer() {
+        timer?.cancel()
+    }
+
+    private fun showToast(text: String) {
+        val activity = activity
+        activity?.runOnUiThread { Toast.makeText(activity, text, Toast.LENGTH_SHORT).show() }
+    }
+
     /**
      * Saves a JPEG [Image] into the specified [File].
      */
@@ -946,6 +960,7 @@ class CustomCamera2Fragment : Fragment(), ActivityCompat.OnRequestPermissionsRes
          * Conversion from screen rotation to JPEG orientation.
          */
         private val TAG = CustomCamera2Fragment::class.java.simpleName
+        private const val CAMERA2_PERMISSION_REQUEST_ID: Int = 1242
         private val DEFAULT_ORIENTATIONS = SparseIntArray()
         private val INVERSE_ORIENTATIONS = SparseIntArray()
         private const val SENSOR_ORIENTATION_DEFAULT_DEGREES = 90
@@ -959,6 +974,8 @@ class CustomCamera2Fragment : Fragment(), ActivityCompat.OnRequestPermissionsRes
         private const val STATE_PICTURE_TAKEN = 4
         private const val MAX_PREVIEW_WIDTH = 1920
         private const val MAX_PREVIEW_HEIGHT = 1080
+        private const val MEDIA_TYPE_IMAGE = 1
+        private const val MEDIA_TYPE_VIDEO = 2
 
         private val CAMERA_PERMISSIONS = arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO)
 

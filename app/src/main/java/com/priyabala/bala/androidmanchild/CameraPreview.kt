@@ -7,10 +7,10 @@ import android.view.SurfaceView
 import java.io.IOException
 import android.view.Surface
 
-
 /** A basic Camera preview class  */
 class CameraPreview(context: Context, private val mCamera: Camera) : SurfaceView(context), SurfaceHolder.Callback {
     private var mHolder: SurfaceHolder = holder
+    var rotationInt: Int = 0
 
     init {
         // Install a SurfaceHolder.Callback so we get notified when the
@@ -81,9 +81,8 @@ class CameraPreview(context: Context, private val mCamera: Camera) : SurfaceView
     fun setCameraDisplayOrientation() {
         val info = android.hardware.Camera.CameraInfo()
         android.hardware.Camera.getCameraInfo(this.getCameraID(), info)
-        val activity = context as DisplayMessageActivity
-        val rotation = activity.windowManager.defaultDisplay
-                .rotation
+        val activity = context as DisplayCustomCamera2Activity
+        val rotation = activity.windowManager.defaultDisplay.rotation
         var degrees = 0
         when (rotation) {
             Surface.ROTATION_0 -> degrees = 0
@@ -101,6 +100,10 @@ class CameraPreview(context: Context, private val mCamera: Camera) : SurfaceView
         }
         println("Bala setCameraDisplayOrientation = $result")
         mCamera.setDisplayOrientation(result)
+        val params = mCamera.parameters
+        params.setRotation(result)
+        mCamera.parameters = params
+        rotationInt = result
     }
 
     fun getCameraID() : Int {
