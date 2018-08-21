@@ -63,6 +63,7 @@ import java.text.SimpleDateFormat
 import java.util.*
 import java.util.concurrent.Semaphore
 import java.util.concurrent.TimeUnit
+import kotlin.concurrent.schedule
 
 @RequiresApi(Build.VERSION_CODES.LOLLIPOP)
 class CustomCamera2Fragment : Fragment(), ActivityCompat.OnRequestPermissionsResultCallback, View.OnClickListener {
@@ -88,6 +89,7 @@ class CustomCamera2Fragment : Fragment(), ActivityCompat.OnRequestPermissionsRes
 
     private var mSensorOrientation: Int = 0
     private var videoFilePath: String? = null
+    private var timer: Timer? = null
 
     private val mediaTypeImage = 1
     private val mediaTypeVideo = 2
@@ -207,11 +209,6 @@ class CustomCamera2Fragment : Fragment(), ActivityCompat.OnRequestPermissionsRes
 
     }
 
-    private fun showToast(text: String) {
-        val activity = activity
-        activity?.runOnUiThread { Toast.makeText(activity, text, Toast.LENGTH_SHORT).show() }
-    }
-
     override fun onCreateView(inflater: LayoutInflater?, container: ViewGroup?,
                               savedInstanceState: Bundle?): View? {
         return inflater!!.inflate(R.layout.fragment_custom_camera2, container, false)
@@ -239,6 +236,7 @@ class CustomCamera2Fragment : Fragment(), ActivityCompat.OnRequestPermissionsRes
     }
 
     override fun onPause() {
+        stopTimer()
         closeCamera()
         stopBackgroundThread()
         super.onPause()
@@ -250,11 +248,7 @@ class CustomCamera2Fragment : Fragment(), ActivityCompat.OnRequestPermissionsRes
                 takeSnapshot()
             }
             R.id.video_button2 -> {
-                if (mIsRecordingVideo) {
-                    stopRecordingVideo()
-                } else {
-                    startRecordingVideo()
-                }
+                takeVideo()
             }
         }
     }
@@ -576,6 +570,14 @@ class CustomCamera2Fragment : Fragment(), ActivityCompat.OnRequestPermissionsRes
         lockFocus()
     }
 
+    private fun takeVideo() {
+        if (mIsRecordingVideo) {
+            stopRecordingVideo()
+        } else {
+            startRecordingVideo()
+        }
+    }
+
     /**
      * Lock the focus as the first step for a still image capture.
      */
@@ -751,13 +753,11 @@ class CustomCamera2Fragment : Fragment(), ActivityCompat.OnRequestPermissionsRes
                     mPreviewSession = cameraCaptureSession
                     updatePreview()
                     activity.runOnUiThread {
-                        // UI
                         video_button2.setImageResource(android.R.drawable.presence_video_busy)
                         mIsRecordingVideo = true
-
-                        // Start recording
                         mMediaRecorder?.start()
                     }
+                    startTimer()
                 }
 
                 override fun onConfigureFailed(cameraCaptureSession: CameraCaptureSession) {
@@ -781,12 +781,11 @@ class CustomCamera2Fragment : Fragment(), ActivityCompat.OnRequestPermissionsRes
             // UI
             video_button2.setImageResource(android.R.drawable.presence_video_online)
             mIsRecordingVideo = false
-
-            // Stop recording
             mMediaRecorder?.stop()
             mMediaRecorder?.reset()
         }
 
+        stopTimer()
         val activity = activity
         if (null != activity) {
             Log.d(TAG, "Video saved")
@@ -806,10 +805,10 @@ class CustomCamera2Fragment : Fragment(), ActivityCompat.OnRequestPermissionsRes
     }
 
     private fun save(bytes: ByteArray) {
-        val file12 = getOutputMediaFile(mediaTypeImage)
+        val pictureFile = getOutputMediaFile(mediaTypeImage)
         var outputStream: FileOutputStream? = null
         try {
-            outputStream = FileOutputStream(file12)
+            outputStream = FileOutputStream(pictureFile)
             outputStream!!.write(bytes)
         } catch (e: Exception) {
             e.printStackTrace()
@@ -822,11 +821,11 @@ class CustomCamera2Fragment : Fragment(), ActivityCompat.OnRequestPermissionsRes
                 Log.v(TAG, "Bala save exception = $e")
             }
             unlockFocus()
-            showToast("Bala camera capture has completed " + file12)
-            val filePath = file12.toString()
-            val videoIntent = Intent(activity, VideoImagePreviewActivity::class.java)
-            videoIntent.putExtra(EXTRA_IMAGE_PATH, filePath)
-            startActivity(videoIntent)
+            showToast("Bala camera2 capture has completed " + pictureFile)
+            val filePath = pictureFile.toString()
+            val snapshotIntent = Intent(activity, VideoImagePreviewActivity::class.java)
+            snapshotIntent.putExtra(EXTRA_IMAGE_PATH, filePath)
+            startActivity(snapshotIntent)
         }
     }
 
@@ -877,6 +876,24 @@ class CustomCamera2Fragment : Fragment(), ActivityCompat.OnRequestPermissionsRes
             }
         }
     }
+
+    fun startTimer() {
+        timer = Timer()
+        timer!!.schedule(10000) {
+            stopRecordingVideo()
+            println("Bala timer executed")
+        }
+    }
+
+    fun stopTimer() {
+        timer?.cancel()
+    }
+
+    private fun showToast(text: String) {
+        val activity = activity
+        activity?.runOnUiThread { Toast.makeText(activity, text, Toast.LENGTH_SHORT).show() }
+    }
+
     /**
      * Saves a JPEG [Image] into the specified [File].
      */

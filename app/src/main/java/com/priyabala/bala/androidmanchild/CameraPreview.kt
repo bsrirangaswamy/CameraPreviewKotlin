@@ -81,7 +81,7 @@ class CameraPreview(context: Context, private val mCamera: Camera) : SurfaceView
     fun setCameraDisplayOrientation() {
         val info = android.hardware.Camera.CameraInfo()
         android.hardware.Camera.getCameraInfo(this.getCameraID(), info)
-        val activity = context as DisplayMessageActivity
+        val activity = context as DisplayCustomCamera2Activity
         val rotation = activity.windowManager.defaultDisplay
                 .rotation
         var degrees = 0
