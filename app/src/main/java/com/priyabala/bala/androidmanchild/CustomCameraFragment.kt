@@ -30,7 +30,7 @@ class CustomCameraFragment : Fragment(), View.OnClickListener {
 
     var camera : Camera? = null
     private var cameraPreview: CameraPreview? = null
-    private var mediaRecorder : MediaRecorder? = null
+    private var mMediaRecorder : MediaRecorder? = null
     private var mIsRecordingVideo : Boolean = false
     private var videoFilePath: String? = null
     private var timer: Timer? = null
@@ -144,27 +144,28 @@ class CustomCameraFragment : Fragment(), View.OnClickListener {
         }
 
         // Step 1: Unlock and set camera to MediaRecorder
-        mediaRecorder = MediaRecorder()
+        mMediaRecorder = MediaRecorder()
         camera!!.unlock()
-        mediaRecorder!!.setCamera(camera)
+        mMediaRecorder!!.setCamera(camera)
 
         // Step 2: Set sources
-        mediaRecorder!!.setAudioSource(MediaRecorder.AudioSource.CAMCORDER)
-        mediaRecorder!!.setVideoSource(MediaRecorder.VideoSource.CAMERA)
+        mMediaRecorder!!.setAudioSource(MediaRecorder.AudioSource.CAMCORDER)
+        mMediaRecorder!!.setVideoSource(MediaRecorder.VideoSource.CAMERA)
 
         // Step 3: Set a CamcorderProfile (requires API Level 8 or higher)
-        mediaRecorder!!.setProfile(CamcorderProfile.get(CamcorderProfile.QUALITY_HIGH))
+        mMediaRecorder!!.setProfile(CamcorderProfile.get(CamcorderProfile.QUALITY_HIGH))
 
         // Step 4: Set output file
         videoFilePath = getOutputMediaFile(mediaTypeVideo).toString()
-        mediaRecorder!!.setOutputFile(videoFilePath!!)
+        mMediaRecorder!!.setOutputFile(videoFilePath!!)
 
         // Step 5: Set the preview output
-        mediaRecorder!!.setPreviewDisplay(cameraPreview!!.holder.surface)
+        mMediaRecorder!!.setOrientationHint(cameraPreview!!.rotationInt)
+        mMediaRecorder!!.setPreviewDisplay(cameraPreview!!.holder.surface)
 
         // Step 6: Prepare configured MediaRecorder
         try {
-            mediaRecorder!!.prepare()
+            mMediaRecorder!!.prepare()
         } catch (e: IllegalStateException) {
             Log.d(TAG, "IllegalStateException preparing MediaRecorder: " + e.message)
             releaseMediaRecorder()
@@ -225,7 +226,7 @@ class CustomCameraFragment : Fragment(), View.OnClickListener {
             activity.runOnUiThread {
                 video_button.setImageResource(android.R.drawable.presence_video_busy)
                 mIsRecordingVideo = true
-                mediaRecorder?.start()
+                mMediaRecorder?.start()
             }
 
             startTimer()
@@ -241,7 +242,7 @@ class CustomCameraFragment : Fragment(), View.OnClickListener {
         activity.runOnUiThread {
             video_button.setImageResource(android.R.drawable.presence_video_online)
             mIsRecordingVideo = false
-            mediaRecorder?.stop()  // stop the recording
+            mMediaRecorder?.stop()  // stop the recording
             releaseMediaRecorder() // release the MediaRecorder object
             camera?.lock()         // take camera access back from MediaRecorder
         }
@@ -281,9 +282,9 @@ class CustomCameraFragment : Fragment(), View.OnClickListener {
     }
 
     private fun releaseMediaRecorder() {
-        mediaRecorder?.reset()   // clear recorder configuration
-        mediaRecorder?.release() // release the recorder object
-        mediaRecorder = null
+        mMediaRecorder?.reset()   // clear recorder configuration
+        mMediaRecorder?.release() // release the recorder object
+        mMediaRecorder = null
         camera?.lock()           // lock camera for later use
     }
 
